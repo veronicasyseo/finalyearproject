@@ -4,7 +4,9 @@ Six Sigma Green Belt project for X Company
 
 
 Extractandmergelines.py addresses some shortcomings of extract_lines.py
+
 Extract_lines.py gives decent outputs
+
 Use benchmark.py to simply use tesseract OCR on any image - will usually not be very accurate
 
 
