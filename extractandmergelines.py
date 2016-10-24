@@ -1,12 +1,14 @@
 """ With automatic line extraction - basically a way to avoid too much pre-processing"""
 
-import cv2 #opencv
-import numpy as np #numpy
-from PIL import Image #Pillow
-from tesserocr import PyTessBaseAPI #tesserocr
+import cv2
+import numpy as np
+from PIL import Image
+from tesserocr import PyTessBaseAPI
 
-img = cv2.imread("input path")
+path = "your path to input image"
+img = cv2.imread(path)
 gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+print "Shape of grayscale image is:  " + str(gray.size)
 gray = gray.astype('float32')
 gray /= 255
 dct = cv2.dct(gray)
@@ -152,10 +154,40 @@ with PyTessBaseAPI(psm=6) as api:
             # Original code: cv2.rectangle(boxmask,(x,y),(x+w,y+h),color=255,thickness=-1)
 # cv2.imshow('done',img&cv2.cvtColor(boxmask,cv2.COLOR_GRAY2BGR))
 cv2.imwrite('output.png', img & cv2.cvtColor(boxmask, cv2.COLOR_GRAY2BGR))
+
+# Need to do some operations on the image before feeding it to OCR in order to improve accuracy:
+ocr_img = cv2.imread('output.png')
+ocr_gray = cv2.cvtColor(ocr_img, cv2.COLOR_BGR2GRAY)
+# Do Otsu binarization on the image:
+ocr_otsu = cv2.threshold(ocr_gray, 0, 255, cv2.THRESH_OTSU)[1]
+ocr_ready = Image.fromarray(ocr_otsu)
 # cv2.waitKey(0)
 # Finally, feed the whole processed image WITHOUT noise removal
 with PyTessBaseAPI(psm = 6) as api:
-    api.SetImageFile('output.png')
-    print "Feeding the processed - but not cleaned - image to tesseract gives: "
+    api.SetImage(ocr_ready)
+    print "Feeding the processed - and slightly cleaned - image to tesseract gives: "
     print api.GetUTF8Text()
+    img = api.GetThresholdedImage()
+    img.show()
+    print "Shape of thresholded image:  "
+    print img.size
+    # api.GetThresholdedImage().show()
+    # print "The thresholded image has the following dimensions: " + str(api.GetThresholdedImage().shape)
+    ls = api.GetTextlines()
+    img = cv2.imread(path)
+    for line in ls:
+        x = line[1]['x']
+        y = line[1]['y']
+        w = line[1]['w']
+        h = line[1]['h']
+        img = cv2.rectangle(img, (x, y), (x + w, y + h), (255, 0, 0), 3)
+    result = Image.fromarray(img)
+
+    print "Shape of the original image: "
+    print result.size
+    result.show()
+
+    # img = cv2.rectangle(img, (x, y), (x + w, y + h), (255, 0, 0), 3
+
+    # print api.GetBoxText()
     # api.GetThresholdedImage().show()
