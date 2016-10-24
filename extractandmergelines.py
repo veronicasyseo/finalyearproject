@@ -3,9 +3,9 @@
 import cv2
 import numpy as np
 from PIL import Image
-from tesserocr import PyTessBaseAPI
+from tesserocr import PyTessBaseAPI, RIL, iterate_level
 
-path = "your path to input image"
+path = "path to input file"
 img = cv2.imread(path)
 gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 print "Shape of grayscale image is:  " + str(gray.size)
@@ -145,13 +145,13 @@ with PyTessBaseAPI(psm=6) as api:
         res = img[y_top:y_bottom, x_left:x_right]
         res = Image.fromarray(res)
         api.SetImage(res)
-        print api.GetUTF8Text()
+        print api.GetUTF8Text() # Need to identify whether line 1 is scanned, and if yes,use this information to help improve accuracy later
 
         cv2.rectangle(boxmask, (x_left, y_top), (x_right, y_bottom), color=255, thickness = -1) # originally thickness = -1
         # res = img[y_top:y_bottom, x_left:x_right]
 
 
-            # Original code: cv2.rectangle(boxmask,(x,y),(x+w,y+h),color=255,thickness=-1)
+           # Original code: cv2.rectangle(boxmask,(x,y),(x+w,y+h),color=255,thickness=-1)
 # cv2.imshow('done',img&cv2.cvtColor(boxmask,cv2.COLOR_GRAY2BGR))
 cv2.imwrite('output.png', img & cv2.cvtColor(boxmask, cv2.COLOR_GRAY2BGR))
 
@@ -186,8 +186,24 @@ with PyTessBaseAPI(psm = 6) as api:
     print "Shape of the original image: "
     print result.size
     result.show()
-
+    # print api.GetHOCRText(0)
     # img = cv2.rectangle(img, (x, y), (x + w, y + h), (255, 0, 0), 3
 
     # print api.GetBoxText()
     # api.GetThresholdedImage().show()
+    iterator = api.GetIterator()
+    iterator.Begin()
+    level = RIL.SYMBOL
+    for r in iterate_level(iterator, level):
+        print r.BoundingBox(level)
+        x = r.BoundingBox(level)[0]
+        y = r.BoundingBox(level)[1]
+        w = r.BoundingBox(level)[2] - x
+        h = r.BoundingBox(level)[3] - y
+
+        img = cv2.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0), 3)
+
+    out = Image.fromarray(img)
+    out.show()
+    """To add: Automatic line rotation, in case some, but not all, of the printed lines are at a large angle.
+     Also, need to find ways to improve the probability of correctly finding line 1 (e.g. 341-172235(63-03)"""
