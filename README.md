@@ -5,6 +5,8 @@ Six Sigma Green Belt project for X Company
 
 Extractandmergelines.py addresses some shortcomings of extract_lines.py
 
+ocrandtextanalysis.py starts interpreting the OCR output. NOTE: in order to use ocrandtextanalysis.py, please create an empty txt file, output.txt in your project folder. Also, download ASN Example.csv from Google Drive. If you use images not mentioned in the csv file, you will have to add them if you want to check OCR accuracy. 
+
 Extract_lines.py gives decent outputs
 
 Use benchmark.py to simply use tesseract OCR on any image - will usually not be very accurate
