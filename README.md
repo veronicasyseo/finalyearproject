@@ -19,3 +19,6 @@ What needs to be done:
  - Need a large dataset for training tensorflow (multilayer convolutional neural network). Format should be [img, label], where img is a 28x28 image (see above) and label is the correct value of the character. 
  
  
+
+Lots of papers on OCR, and about segmentation of handwritten characters:  
+http://iris.usc.edu/Vision-Notes/bibliography/contentschar.html#OCR,%20Document%20Analysis%20and%20Character%20Recognition%20Systems
