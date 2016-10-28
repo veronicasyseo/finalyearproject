@@ -4,8 +4,13 @@ import cv2
 import numpy as np
 from PIL import Image
 from tesserocr import PyTessBaseAPI, RIL, iterate_level
+import csv
+import Levenshtein
 
-path = "path to input file"
+path = "path to image file"
+ocr_output_path = "output.txt" # should probably be called output path?
+asn_input_path = "path to ASN, downloaded from our google drive"
+
 img = cv2.imread(path)
 gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 print "Shape of grayscale image is:  " + str(gray.size)
@@ -51,18 +56,31 @@ def overlap(row1, row2): # Note: will have to check against contlist also, to se
     else:
         return False
 
-def proximitycheck(matrix):
-    """Returns a list of contours after merging close and overlapping contours"""
+def proximitycheck(matrix): # Current problem: There are some pictures getting stuck
+    """Returns a list of contours after merging close and overlapping contours.
+    May need special case for when the matrix (input) has only one element"""
     output = []
     while len(matrix) > 0: # Keep doing until no more elements in the original matrix
         done = False # done is for the current i-value
         if len(output) == 0:
             output.append(matrix.pop(0))
-        else: # Deal with row1 = row2?
+        elif len(matrix) == 1:
+            # check if can match to any of the elements in the output array, otherwise simply append it
+            row1 = matrix[0]
+            row2 = output[len(output)-1] # the last element. Need error handling (possibly)
+            if overlap(row1, row2):
+                x_min = min((row1[1], row2[1]))
+                y_min = min((row1[0], row2[0]))
+                x_max = max((row1[3], row2[3]))
+                y_max = max((row1[2], row2[2]))
+                matrix.pop(0)
+                row4 = [y_min, x_min, y_max, x_max]
+                output.append(row4)
+        else:
             # Do comparison within the input matrix
             row1 = matrix[0] # To be compared with all the other elements until match is found.
-             # Cause infinite loop?
-            for j in range(1, len(matrix)): # Need to deal with out of bound- does not break out of loop properly...so the length of the array changes while iterating
+
+            for j in range(0, len(matrix)): # Need to deal with out of bound- does not break out of loop properly...so the length of the array changes while iterating
                 if not done and j < len(matrix): # avoid out of bound
                     row2 = matrix[j]
                     if overlap(row1, row2):
@@ -81,7 +99,7 @@ def proximitycheck(matrix):
                         for l in range(0, len(output)): #Need to deal with out of bound issues
                             if done:
                                 break
-                            elif overlap(row3, output[max(len(output)-l-1, 0)]): #reduce cost later
+                            elif overlap(row3, output[max(len(output)-l-1, 0)]):
                                 r = max(len(output)-l-1, 0)
                                 x_min = min(row3[1], output[r][1])
                                 y_min = min(row3[0], output[r][0])
@@ -95,10 +113,10 @@ def proximitycheck(matrix):
                         if not done: # if does not match any of the other elements in output matrix
                             output.append(row3)
                             done = True
-            if not done:
-                output.append(matrix.pop(0))
-                done = True
-                        # remember to break out of loop and to remove element from matrix
+                if not done: # CHECK: Indenting
+                    output.append(matrix.pop(0))
+                    done = True
+
 
     return output
 lower = 0.0001 # proably needs adjusting
@@ -118,24 +136,15 @@ with PyTessBaseAPI(psm=6) as api:
             # contpts = [x_left, x_right, y_top, y_bottom]
             contlist.append(contpts)
             # if cv2.contourArea(contours[i]) / img.size > lower:
-            # Note: may need to handle out of bounds problems
             # cv2.rectangle(boxmask, (x_left, y_top), (x_right, y_bottom), color=255,
                           # thickness=-1)  # thickness = -1 originally
             # res = img[y_top:y_bottom, x_left:x_right]
-            # res = Image.fromarray(res)
-            # api.SetImage(res)
             # print "This is from contour # " + str(i)
-            # print api.GetUTF8Text()
-            # path = "cont" + str(i)
-            # res.save(path, "png")
 
     contlist.sort()
     print "The length of the original list is " + str(len(contlist))
     merged = proximitycheck(contlist)
     print "The length of the merged list is " + str(len(merged))
-
-    # merged = proximitycheck(merged)
-    # print "After merging once more, we have: " + str(len(merged))
 
     for cnt in merged:
         y_top = cnt[0]
@@ -143,30 +152,31 @@ with PyTessBaseAPI(psm=6) as api:
         y_bottom = cnt[2]
         x_right = cnt[3]
         res = img[y_top:y_bottom, x_left:x_right]
-        res = Image.fromarray(res)
-        api.SetImage(res)
-        print api.GetUTF8Text() # Need to identify whether line 1 is scanned, and if yes,use this information to help improve accuracy later
+        res = Image.fromarray(res) #check if necessary
+        # api.SetImage(res)
+        # print api.GetUTF8Text() # Need to identify whether line 1 is scanned, and if yes,use this information to help improve accuracy later
 
         cv2.rectangle(boxmask, (x_left, y_top), (x_right, y_bottom), color=255, thickness = -1) # originally thickness = -1
-        # res = img[y_top:y_bottom, x_left:x_right]
 
-
-           # Original code: cv2.rectangle(boxmask,(x,y),(x+w,y+h),color=255,thickness=-1)
-# cv2.imshow('done',img&cv2.cvtColor(boxmask,cv2.COLOR_GRAY2BGR))
 cv2.imwrite('output.png', img & cv2.cvtColor(boxmask, cv2.COLOR_GRAY2BGR))
 
 # Need to do some operations on the image before feeding it to OCR in order to improve accuracy:
 ocr_img = cv2.imread('output.png')
 ocr_gray = cv2.cvtColor(ocr_img, cv2.COLOR_BGR2GRAY)
+
 # Do Otsu binarization on the image:
 ocr_otsu = cv2.threshold(ocr_gray, 0, 255, cv2.THRESH_OTSU)[1]
 ocr_ready = Image.fromarray(ocr_otsu)
-# cv2.waitKey(0)
+
 # Finally, feed the whole processed image WITHOUT noise removal
 with PyTessBaseAPI(psm = 6) as api:
     api.SetImage(ocr_ready)
+    api.SetVariable("tessedit_char_whitelist", "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0987654321-.:/()")
     print "Feeding the processed - and slightly cleaned - image to tesseract gives: "
-    print api.GetUTF8Text()
+    output_text = api.GetUTF8Text().encode("utf-8") # Encode as utf-8, otherwise would be ascii by python's default
+    print output_text
+    f = open("output.txt", 'w')
+    f.write(output_text)
     img = api.GetThresholdedImage()
     img.show()
     print "Shape of thresholded image:  "
@@ -185,8 +195,7 @@ with PyTessBaseAPI(psm = 6) as api:
 
     print "Shape of the original image: "
     print result.size
-    result.show()
-    # print api.GetHOCRText(0)
+    # result.show()
     # img = cv2.rectangle(img, (x, y), (x + w, y + h), (255, 0, 0), 3
 
     # print api.GetBoxText()
@@ -195,15 +204,83 @@ with PyTessBaseAPI(psm = 6) as api:
     iterator.Begin()
     level = RIL.SYMBOL
     for r in iterate_level(iterator, level):
-        print r.BoundingBox(level)
+        # print r.BoundingBox(level)
         x = r.BoundingBox(level)[0]
         y = r.BoundingBox(level)[1]
-        w = r.BoundingBox(level)[2] - x
-        h = r.BoundingBox(level)[3] - y
+        x_2 = r.BoundingBox(level)[2]
+        y_2 = r.BoundingBox(level)[3]
 
-        img = cv2.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0), 3)
+        img = cv2.rectangle(img, (x, y), (x_2, y_2), (0, 255, 0), 3) # Draw a green rectangle around each character found by OCR
 
     out = Image.fromarray(img)
     out.show()
+    f.close()
+    # Need to kill iterator to clear memory====
+
+    # Want to show the bounding box of L1 of the SKU:
+    ocr_data = []
+    asn_data = []
+
+    # Read the advance shipment notice for the purpose of checking OCR output against the feasible values
+    with open(asn_input_path, "rb") as csvfile:
+        spamreader = csv.reader(csvfile, delimiter=';',
+                                quotechar='|')  # Spamreader is an object..need to save the info somehow
+
+        for row in spamreader:  # Row only contains 1 row at any given time
+            print ', '.join(row)
+            asn_data.append(row)
+    csvfile.close()
+
+    # Read the ocr output into a list
+    with open(ocr_output_path) as f:
+        ocr_data.append(f.readlines())
+    f.close()
+
+    smallest_lev = 100
+    index = 0
+
+    for line in ocr_data[0]:
+        if len(line) > 10:  # don't reject if is long enough to be L1 of SKU
+            for i in range(1, len(asn_data)):
+                d = Levenshtein.distance(asn_data[i][3], line)
+                if d < smallest_lev:
+                    smallest_lev = d
+                    smallest_pos = i
+                    pos = index
+        index += 1
+
+    print "Smallest Lev distance: " + str(smallest_lev)
+    if smallest_lev == 1:  # Since newline character is ignored
+        print "Perfect match!"
+    print "Found at position: " + str(smallest_pos)
+    print "Has value: " + asn_data[smallest_pos][3]  # The corresponding value of L1 SKU.
+    # The following is the details of L1 of SKU:
+    x = ls[pos][1]['x']
+    y = ls[pos][1]['y']
+    w = ls[pos][1]['w']
+    h = ls[pos][1]['h']
+    im = cv2.imread(path)
+    im = cv2.rectangle(im, (x, y), (x + w, y + h), (0, 0, 255), 3)
+    out = Image.fromarray(im)
+    out.show()
+    c = 20 # constant, needs fine-tuning
+    x_min = x-c # initial guess
+    for x in range(1, 4): # try the next 3 lines
+        if (x+pos) < len(ls): # check out of bounds
+            if ls[x+pos][1]['x'] < x_min:
+                x_min = ls[x+pos][1]['x']
+    x_hw1 = x_min - c
+    y_hw1 = y + h
+    x_hw2 = x + w
+    y_hw2 = y + int(3.5*h) # needs calibration
+    # The above relies on correctly finding the first line of SKU AND correctly cropping the image based on line detection
+    handwriting = cv2.imread(path)
+    gray = cv2.cvtColor(handwriting, cv2.COLOR_BGR2GRAY)
+    boxmask = np.zeros(gray.shape, gray.dtype)
+    cv2.rectangle(boxmask, (x_hw1, y_hw1), (x_hw2, y_hw2), color=255, thickness=-1)
+    # cv2.imwrite('output2.png', img & cv2.cvtColor(boxmask, cv2.COLOR_GRAY2BGR))
+    cv2.imwrite('output2.png', im & cv2.cvtColor(boxmask, cv2.COLOR_GRAY2BGR))
+    # cv2.imwrite('output.png', img & cv2.cvtColor(boxmask, cv2.COLOR_GRAY2BGR))
+    # gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     """To add: Automatic line rotation, in case some, but not all, of the printed lines are at a large angle.
      Also, need to find ways to improve the probability of correctly finding line 1 (e.g. 341-172235(63-03)"""
