@@ -5,7 +5,7 @@ Six Sigma Green Belt project for X Company
 
 Extractandmergelines.py addresses some shortcomings of extract_lines.py. Starts interpreting the OCR output. NOTE: in order to use, please create an empty txt file, output.txt in your project folder. Also, download ASN Example.csv from Google Drive. 
 
-Dashes.py finds the locations of the dashes in the Solid code. First run extractandmergelines.py in order to generate the necessary input file required by dashes.py. 
+Dashes.py finds the locations of the dashes in the Solid code. First run extractandmergelines.py in order to generate the necessary input file required by dashes.py. Places the dashes on 28x28 backgrounds, which is to prepare input for tensorflow
 
 Extract_lines.py gives decent outputs. 
 
