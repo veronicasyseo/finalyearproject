@@ -123,6 +123,8 @@ region1 = []
 region2 = []
 region3 = []
 
+keep_rects = []
+
 if len(passes) == 2:
     x_left_dash = min(passed_conts[passes[0]][0][0][0][0], passed_conts[passes[1]][0][0][0][0]) # assumes 2 dashes found
     x_right_dash = max(passed_conts[passes[0]][0][1][0][0], passed_conts[passes[1]][0][1][0][0]) # assumes 2 dashes found
@@ -139,30 +141,15 @@ if len(passes) == 2:
             else:
                 print "Not in any region "
     # Reason for splitting into regions is so that we can control the number of characters found (should be 2|3|3)
-    for r in region1:
-        x = r[0]
-        y = r[1]
-        w = r[2]
-        h = r[3]
-        sli = binary[y:y+h, x:x+w]
-        sli = 255 - sli
-        sli = Image.fromarray(sli) # in order to be able to resize
-        if w > h: # wider than higher
-            factor = 20.0/w # careful with data types
-            h = int(factor*h)
-            w = 20
-        else: # height larger than width
-            factor = 20.0/h
-            w = int(factor*w)
-            h = 20
-        sli = sli.resize((w, h), Image.ANTIALIAS)
-        sli = np.asarray(sli)
-        print sli.shape
-        on_bg = placeonbg(sli)
-        Image.fromarray(on_bg).show()
-        # cv2.rectangle(img, (x, y), (x + w, y + h), (255, 0, 0), 3)
 
-    for r in region2:
+    for x in range(max(0,len(region1)-2), len(region1)):
+        keep_rects.append(region1[x])
+    for x in range(0, len(region2)):
+        keep_rects.append(region2[x])
+    for x in range(0, min(len(region3), 3)):
+        keep_rects.append(region3[x])
+
+    for r in keep_rects:
         x = r[0]
         y = r[1]
         w = r[2]
@@ -183,32 +170,11 @@ if len(passes) == 2:
         print sli.shape
         on_bg = placeonbg(sli)
         Image.fromarray(on_bg).show()
-        # cv2.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0), 3)
 
-    for r in region3:
-        x = r[0]
-        y = r[1]
-        w = r[2]
-        h = r[3]
-        sli = binary[y:y + h, x:x + w]
-        sli = 255 - sli
-        sli = Image.fromarray(sli)  # in order to be able to resize
-        if w > h:  # wider than higher
-            factor = 20.0 / w  # careful with data types
-            h = int(factor * h)
-            w = 20
-        else:  # height larger than width
-            factor = 20.0 / h
-            w = int(factor * w)
-            h = 20
-        sli = sli.resize((w, h), Image.ANTIALIAS)
-        sli = np.asarray(sli)
-        print sli.shape
-        on_bg = placeonbg(sli)
-        Image.fromarray(on_bg).show()
-        #cv2.rectangle(img, (x, y), (x + w, y + h), (0, 0, 255), 3)
+else:
+    print "Couldn't find the 2 dashes, GG"
 # Draw in different colors
 # Image.fromarray(img).show()
 
-# Could simply not slice the image before contour analysis in order to preserve utility of knowing location of dashes
-# Only problem is contours spanning too far down in y-dimension
+# Next, want to find a way to limit the number of selected regions/characters to (2|3|3) from regions 1, 2, 3 respectively.
+# Also, need to deal with cases where the 2 dashes are NOT found
