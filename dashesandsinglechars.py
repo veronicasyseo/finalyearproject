@@ -63,7 +63,7 @@ def placeonbg(array): #input should be array of an image. Should be resized
     background = np.zeros((28, 28), array.dtype) # create black background, new one for each time. maybe gray.dtype instead
     for k in range(0, len(array)):
         for j in range(0, len(array[k])):
-            background[k+4][j+4] = array[k][j]
+            background[k+int(round((28-array.shape[0])/2))][j+int(round((28-array.shape[1])/2))] = array[k][j]
     return background
 
 # Next, extract the dashes, place on 28x28.
@@ -119,13 +119,15 @@ for b in range(0, len(popper)):
     print "pop!"
 print boundingrects
 
+region1 = []
+region2 = []
+region3 = []
+
 if len(passes) == 2:
     x_left_dash = min(passed_conts[passes[0]][0][0][0][0], passed_conts[passes[1]][0][0][0][0]) # assumes 2 dashes found
     x_right_dash = max(passed_conts[passes[0]][0][1][0][0], passed_conts[passes[1]][0][1][0][0]) # assumes 2 dashes found
 
-    region1 = []
-    region2 = []
-    region3 = []
+
     for rect in boundingrects:
         if not (rect[1] > y_bottom): # reject the rectangles that go outside our region
             if rect[0] < x_left_dash and rect[0] + rect[2] < x_left_dash:
@@ -155,6 +157,7 @@ if len(passes) == 2:
             h = 20
         sli = sli.resize((w, h), Image.ANTIALIAS)
         sli = np.asarray(sli)
+        print sli.shape
         on_bg = placeonbg(sli)
         Image.fromarray(on_bg).show()
         # cv2.rectangle(img, (x, y), (x + w, y + h), (255, 0, 0), 3)
@@ -177,6 +180,7 @@ if len(passes) == 2:
             h = 20
         sli = sli.resize((w, h), Image.ANTIALIAS)
         sli = np.asarray(sli)
+        print sli.shape
         on_bg = placeonbg(sli)
         Image.fromarray(on_bg).show()
         # cv2.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0), 3)
@@ -199,6 +203,7 @@ if len(passes) == 2:
             h = 20
         sli = sli.resize((w, h), Image.ANTIALIAS)
         sli = np.asarray(sli)
+        print sli.shape
         on_bg = placeonbg(sli)
         Image.fromarray(on_bg).show()
         #cv2.rectangle(img, (x, y), (x + w, y + h), (0, 0, 255), 3)
