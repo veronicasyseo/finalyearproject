@@ -5,7 +5,7 @@ Six Sigma Green Belt project for X Company
 
 Extractandmergelines.py addresses some shortcomings of extract_lines.py. Starts interpreting the OCR output. NOTE: in order to use, please create an empty txt file, output.txt in your project folder. Also, download ASN Example.csv from Google Drive. 
 
-Dashes.py finds the locations of the dashes in the Solid code. First run extractandmergelines.py in order to generate the necessary input file required by dashes.py. Places the dashes on 28x28 backgrounds, which is to prepare input for tensorflow
+Dashesandsinglechars.py finds the locations of the dashes in the Solid code. Based on this, each character from the Solid code is extracted, and saved on a 28x28 black background. The images can then be fed to tensorflow to be read. To use, please first run extractandmergelines.py in order to generate the necessary input file required by dashes.py. Future improvements: separation of touching handwritten characters, limiting the number of characters selected to 8 (ab-cde-fgh).
 
 Extract_lines.py gives decent outputs. 
 
