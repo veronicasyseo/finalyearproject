@@ -7,9 +7,9 @@ from tesserocr import PyTessBaseAPI, RIL, iterate_level
 import csv
 import Levenshtein
 
-path = "path to image file"
+path = "your file name"
 ocr_output_path = "output.txt" # should probably be called output path?
-asn_input_path = "path to ASN, downloaded from our google drive"
+asn_input_path = "path to ASN in csv format"
 
 img = cv2.imread(path)
 gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -117,11 +117,12 @@ def proximitycheck(matrix): # Current problem: There are some pictures getting s
                     output.append(matrix.pop(0))
                     done = True
 
-
     return output
+
 lower = 0.0001 # proably needs adjusting
 upper = 0.80 # may need adjustments
 scale = 1.08
+
 with PyTessBaseAPI(psm=6) as api:
     print "Before checking area, the number of contours was: " + str(len(contours))
     for i in xrange(len(contours)):
@@ -185,7 +186,8 @@ with PyTessBaseAPI(psm = 6) as api:
     # print "The thresholded image has the following dimensions: " + str(api.GetThresholdedImage().shape)
     ls = api.GetTextlines()
     img = cv2.imread(path)
-    for line in ls:
+
+    for line in ls: # draw all the rectangles
         x = line[1]['x']
         y = line[1]['y']
         w = line[1]['w']
@@ -236,50 +238,63 @@ with PyTessBaseAPI(psm = 6) as api:
         ocr_data.append(f.readlines())
     f.close()
 
-    smallest_lev = 100
+    smallest_lev = 1000
     index = 0
-
+    # Currently shifts the bounding rectangle of L1 of SKU one line down
+    blanks = 0
     for line in ocr_data[0]:
-        if len(line) > 10:  # don't reject if is long enough to be L1 of SKU
-            for i in range(1, len(asn_data)):
+        if len(line) == 0:
+            print "Soemhow have 0 length of line? "
+        elif len(line) == 1:
+            print "Blank line!"
+            blanks += 1
+        elif len(line) > 10:  # don't reject if is long enough to be L1 of SKU. May want to remove white-spaces from Line
+            for i in range(1, len(asn_data)): # asn_data[0] is just the titles
                 d = Levenshtein.distance(asn_data[i][3], line)
                 if d < smallest_lev:
                     smallest_lev = d
                     smallest_pos = i
-                    pos = index
+                    pos = index # sometimes pos turns out to be the wrong value..? Ends up referring to the line below instead of L1 of SKU.
         index += 1
-
-    print "Smallest Lev distance: " + str(smallest_lev)
+    if blanks > 0:
+        pos -= blanks-1
+    print "Smallest Lev distance: " + str(smallest_lev) # Note: Whitespaces don't affect the pick of the best fit, but they do affect the given Levenshtein distance (score)
     if smallest_lev == 1:  # Since newline character is ignored
         print "Perfect match!"
     print "Found at position: " + str(smallest_pos)
     print "Has value: " + asn_data[smallest_pos][3]  # The corresponding value of L1 SKU.
-    # The following is the details of L1 of SKU:
+
+    # The following are the details of L1 of SKU:
     x = ls[pos][1]['x']
+    print x
     y = ls[pos][1]['y']
     w = ls[pos][1]['w']
+    print w
     h = ls[pos][1]['h']
     im = cv2.imread(path)
-    im = cv2.rectangle(im, (x, y), (x + w, y + h), (0, 0, 255), 3)
+    im_hw = im.copy()
+    im = cv2.rectangle(im, (x, y), (x + w, y + h), (0, 0, 255), 3) # Bounding rectangle of the first line of SKU
     out = Image.fromarray(im)
-    out.show()
+    out.show() # look at that lovely blue rectangle!
     c = 20 # constant, needs fine-tuning
     x_min = x-c # initial guess
-    for x in range(1, 4): # try the next 3 lines
-        if (x+pos) < len(ls): # check out of bounds
-            if ls[x+pos][1]['x'] < x_min:
-                x_min = ls[x+pos][1]['x']
+    for oh in range(1, 4): # try the next 3 lines. Assumes there are at least 3 more lines after L1 of SKU
+        if (oh+pos) < len(ls): # check out of bounds
+            if ls[oh+pos][1]['x'] < x_min:
+                x_min = ls[oh+pos][1]['x']
     x_hw1 = x_min - c
     y_hw1 = y + h
     x_hw2 = x + w
-    y_hw2 = y + int(3.5*h) # needs calibration
+    print x_hw2
+    y_hw2 = y + int(5.0*h) # needs calibration
     # The above relies on correctly finding the first line of SKU AND correctly cropping the image based on line detection
     handwriting = cv2.imread(path)
     gray = cv2.cvtColor(handwriting, cv2.COLOR_BGR2GRAY)
     boxmask = np.zeros(gray.shape, gray.dtype)
-    cv2.rectangle(boxmask, (x_hw1, y_hw1), (x_hw2, y_hw2), color=255, thickness=-1)
+    cv2.rectangle(boxmask, (x_hw1, y_hw1), (x_hw2, y_hw2), color=255, thickness=-1) # coords, not distances for 2nd part 
     # cv2.imwrite('output2.png', img & cv2.cvtColor(boxmask, cv2.COLOR_GRAY2BGR))
-    cv2.imwrite('output2.png', im & cv2.cvtColor(boxmask, cv2.COLOR_GRAY2BGR))
+    cv2.imwrite('output2.png', im_hw & cv2.cvtColor(boxmask, cv2.COLOR_GRAY2BGR))
+
     # cv2.imwrite('output.png', img & cv2.cvtColor(boxmask, cv2.COLOR_GRAY2BGR))
     # gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     """To add: Automatic line rotation, in case some, but not all, of the printed lines are at a large angle.
