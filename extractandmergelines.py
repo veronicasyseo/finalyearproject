@@ -7,8 +7,8 @@ from tesserocr import PyTessBaseAPI, RIL, iterate_level
 import csv
 import Levenshtein
 
-path = "your file name"
-ocr_output_path = "output.txt" # should probably be called output path?
+path = "path to your image file"
+ocr_output_path = "output.txt"
 asn_input_path = "path to ASN in csv format"
 
 img = cv2.imread(path)
@@ -33,14 +33,16 @@ gray = cv2.morphologyEx(gray, cv2.MORPH_DILATE,
                         iterations=1)
 gray = cv2.threshold(gray, 0, 255, cv2.THRESH_OTSU)[1]
 
-temp = Image.fromarray(gray).show()
+temp = Image.fromarray(gray)
+temp.show()
+temp.save("temp.png")
 
 abac, contours, hierarchy = cv2.findContours(gray, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 boxmask = np.zeros(gray.shape, gray.dtype)
 
 i = 0
 
-contlist = [] # Too be used for larger (merged) thresholds, may not be necessary
+contlist = [] # To be used for larger (merged) contours
 
 disthreshold = 10 # This is currently creating large bias towards the bottom-right corner of the image.
 y_dim = img.shape[0]
@@ -56,7 +58,7 @@ def overlap(row1, row2): # Note: will have to check against contlist also, to se
     else:
         return False
 
-def proximitycheck(matrix): # Current problem: There are some pictures getting stuck
+def proximitycheck(matrix): # Current problem: There are some pictures getting stuck..Resolved
     """Returns a list of contours after merging close and overlapping contours.
     May need special case for when the matrix (input) has only one element"""
     output = []
@@ -169,11 +171,11 @@ ocr_gray = cv2.cvtColor(ocr_img, cv2.COLOR_BGR2GRAY)
 ocr_otsu = cv2.threshold(ocr_gray, 0, 255, cv2.THRESH_OTSU)[1]
 ocr_ready = Image.fromarray(ocr_otsu)
 
-# Finally, feed the whole processed image WITHOUT noise removal
+# Finally, feed the whole processed image
 with PyTessBaseAPI(psm = 6) as api:
     api.SetImage(ocr_ready)
     api.SetVariable("tessedit_char_whitelist", "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0987654321-.:/()")
-    print "Feeding the processed - and slightly cleaned - image to tesseract gives: "
+    print "Feeding the processed image to tesseract gives: "
     output_text = api.GetUTF8Text().encode("utf-8") # Encode as utf-8, otherwise would be ascii by python's default
     print output_text
     f = open("output.txt", 'w')
@@ -216,6 +218,7 @@ with PyTessBaseAPI(psm = 6) as api:
 
     out = Image.fromarray(img)
     out.show()
+    out.save("out.png")
     f.close()
     # Need to kill iterator to clear memory====
 
@@ -229,7 +232,7 @@ with PyTessBaseAPI(psm = 6) as api:
                                 quotechar='|')  # Spamreader is an object..need to save the info somehow
 
         for row in spamreader:  # Row only contains 1 row at any given time
-            print ', '.join(row)
+            #print ', '.join(row)
             asn_data.append(row)
     csvfile.close()
 
@@ -266,16 +269,17 @@ with PyTessBaseAPI(psm = 6) as api:
 
     # The following are the details of L1 of SKU:
     x = ls[pos][1]['x']
-    print x
+    #print x
     y = ls[pos][1]['y']
     w = ls[pos][1]['w']
-    print w
+    #print w
     h = ls[pos][1]['h']
     im = cv2.imread(path)
     im_hw = im.copy()
     im = cv2.rectangle(im, (x, y), (x + w, y + h), (0, 0, 255), 3) # Bounding rectangle of the first line of SKU
     out = Image.fromarray(im)
-    out.show() # look at that lovely blue rectangle!
+    out.show()# look at that lovely blue rectangle!
+    out.save("out2.png")
     c = 20 # constant, needs fine-tuning
     x_min = x-c # initial guess
     for oh in range(1, 4): # try the next 3 lines. Assumes there are at least 3 more lines after L1 of SKU
@@ -285,13 +289,13 @@ with PyTessBaseAPI(psm = 6) as api:
     x_hw1 = x_min - c
     y_hw1 = y + h
     x_hw2 = x + w
-    print x_hw2
+    #print x_hw2
     y_hw2 = y + int(5.0*h) # needs calibration
     # The above relies on correctly finding the first line of SKU AND correctly cropping the image based on line detection
     handwriting = cv2.imread(path)
     gray = cv2.cvtColor(handwriting, cv2.COLOR_BGR2GRAY)
     boxmask = np.zeros(gray.shape, gray.dtype)
-    cv2.rectangle(boxmask, (x_hw1, y_hw1), (x_hw2, y_hw2), color=255, thickness=-1) # coords, not distances for 2nd part 
+    cv2.rectangle(boxmask, (x_hw1, y_hw1), (x_hw2, y_hw2), color=255, thickness=-1) # coords, not distances for 2nd part
     # cv2.imwrite('output2.png', img & cv2.cvtColor(boxmask, cv2.COLOR_GRAY2BGR))
     cv2.imwrite('output2.png', im_hw & cv2.cvtColor(boxmask, cv2.COLOR_GRAY2BGR))
 
