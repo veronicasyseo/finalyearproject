@@ -7,7 +7,6 @@ Extractandmergelines.py addresses some shortcomings of extract_lines.py. Starts 
 
 Dashesandsinglechars.py finds the locations of the dashes in the Solid code. Based on this, each character from the Solid code is extracted, and saved on a 28x28 black background. The images can then be fed to tensorflow to be read. To use, please first run extractandmergelines.py in order to generate the necessary input file required by dashes.py. Future improvements: separation of touching handwritten characters, limiting the number of characters selected to 8 (ab-cde-fgh).
 
-Extract_lines.py gives decent outputs. 
 
 Use benchmark.py to simply use tesseract OCR on any image - will usually not be very accurate
 
