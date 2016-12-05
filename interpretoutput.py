@@ -6,8 +6,8 @@ import Levenshtein
 # May want to introduce a fake line in the csv file (ASN) for error detection.
 # Objective: categorize each line.
 
-ocr_input_path = "output.txt" # path to your OCR output 
-asn_input_path = "path to advance shipment notice in csv format"
+ocr_input_path = "output.txt"
+asn_input_path = "path to your csv file (ASN)"
 
 ocr_data = []
 asn_data = []
@@ -56,8 +56,8 @@ def isquantity(st):
 
     """Returns 1 if it's likely that this line is telling the quantity of the parcel"""
     st = st.upper()
-
-    if "PC" in st or "PCS" in st or "PIECES" in st:
+    st = st.translate(None, " ")
+    if "PC" in st or "PCS" in st or "PIECES" in st or "PS" in st:
         return 1
     else:
         return 0
@@ -91,8 +91,9 @@ def issolidcode(st):
 
     """Returns 1 if it's likely that this is a solid code.
     Problem: Both item and solid codes can contain two hyphens. """
-
-    if st.count("-") == 2 or "000" in st:
+    st = st.upper()
+    st = st.replace("O", "0")
+    if st.count("-") == 2 or "000" in st: # want to add more options later
         return 1
     else:
         return 0
@@ -217,7 +218,7 @@ else: # want to categorize the different lines into types (description, code etc
     for x in cats:
         if x == False:
             count_false += 1
-
+    print count_false
     if count_false == 3: # hope for convenient structure
         count_boxnum = 0
         count_quant = 0
@@ -231,18 +232,21 @@ else: # want to categorize the different lines into types (description, code etc
                     count_quant += 1
                 if ele['Solidcode']:
                     count_solid += 1
-            if count_boxnum == count_quant == count_solid == 1: # ez m8
-                for i in range(0, len(di_array)): # may need to use a while-loop instead
-                    if di_array[i]['Categorized'] == False: # want to count the number of falses for this element
-                        if di_array[i]['Boxnumber'] == True and di_array[i]['Quantity'] == False and di_array[i]['Solidcode'] == False:
-                            di_array[i]['Categorized'] = True
-                            cats[i] = 'Boxnumber'
-                        elif di_array[i]['Boxnumber'] == False and di_array[i]['Quantity'] == True and di_array[i]['Solidcode'] == False:
-                            di_array[i]['Categorized'] = True
-                            cats[i] = 'Quantity'
-                        elif di_array[i]['Boxnumber'] == False and di_array[i]['Quantity'] == False and di_array[i]['Solidcode'] == True:
-                            di_array[i]['Categorized'] = True
-                            cats[i] = 'Solidcode'
+        print count_boxnum
+        print count_quant
+        print count_solid
+        if count_boxnum == count_quant == count_solid == 1: # ez m8
+            for i in range(0, len(di_array)): # may need to use a while-loop instead
+                if di_array[i]['Categorized'] == False: # want to count the number of falses for this element
+                    if di_array[i]['Boxnumber'] == True and di_array[i]['Quantity'] == False and di_array[i]['Solidcode'] == False:
+                        di_array[i]['Categorized'] = True
+                        cats[i] = 'Boxnumber'
+                    elif di_array[i]['Boxnumber'] == False and di_array[i]['Quantity'] == True and di_array[i]['Solidcode'] == False:
+                        di_array[i]['Categorized'] = True
+                        cats[i] = 'Quantity'
+                    elif di_array[i]['Boxnumber'] == False and di_array[i]['Quantity'] == False and di_array[i]['Solidcode'] == True:
+                        di_array[i]['Categorized'] = True
+                        cats[i] = 'Solidcode'
 
     # Solid code part should be left for a later part...
     print cats
