@@ -11,6 +11,11 @@ Charextraction.py finds the locations of the hyphens in the Solid code. Based on
 
 Use benchmark.py to simply use tesseract OCR on any image - will usually not be very accurate
 
+Interpretoutput.py 
+Given a txt file containing the OCR output from the initial pre-procesing and an advance shipment notice (ASN) in csv format (see google drive), it categorizes each line of text into the following categories:
+Item code, solid (assort) code, quantity, box number, item description, or "nothing". 
+This will be useful for determining whether further image processing is needed for a particular input image. 
+
 
 What needs to be done: 
  - [COMPLETED] Automatic character extraction (single characters) using opencv (could build on extractandmergelines.py.)
