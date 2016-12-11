@@ -11,6 +11,8 @@ Charextraction.py finds the locations of the hyphens in the Solid code. Based on
 
 Use benchmark.py to simply use tesseract OCR on any image - will usually not be very accurate
 
+Histograms.py might be useful later. Is related to this paper (about segmenting handwriting): http://www.ee.bgu.ac.il/~dinstein/stip2002/Seminar_papers/David_Cahana_A%20character%20segmentation%20method%20using%20projection%20profile-based%20technique.pdf 
+
 Interpretoutput.py 
 Given a txt file containing the OCR output from the initial pre-procesing and an advance shipment notice (ASN) in csv format (see google drive), it categorizes each line of text into the following categories:
 Item code, solid (assort) code, quantity, box number, item description, or "nothing". 
