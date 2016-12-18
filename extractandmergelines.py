@@ -1,4 +1,5 @@
-""" With automatic line extraction - basically a way to avoid too much pre-processing"""
+""" With automatic line extraction - basically a way to avoid too much pre-processing
+Now takes into account cases where the solid/assort code is on the same line as the item code"""
 
 import cv2
 import numpy as np
@@ -7,12 +8,13 @@ from tesserocr import PyTessBaseAPI, RIL, iterate_level
 import csv
 import Levenshtein
 
-path = "path to your image file"
-ocr_output_path = "output.txt"
+path = "path to your image input file"
+ocr_output_path = "output.txt" # please create an empty txt file with this name in your project folder
 asn_input_path = "path to ASN in csv format"
 
 img = cv2.imread(path)
 gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+Image.fromarray(gray).show()
 print "Shape of grayscale image is:  " + str(gray.size)
 gray = gray.astype('float32')
 gray /= 255
@@ -32,9 +34,10 @@ gray = cv2.morphologyEx(gray, cv2.MORPH_DILATE,
                         cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (20, 20)), # Originally (11,11)
                         iterations=1)
 gray = cv2.threshold(gray, 0, 255, cv2.THRESH_OTSU)[1]
-
+binary = gray.copy()
+Image.fromarray(binary).save("Binary.png")
 temp = Image.fromarray(gray)
-temp.show()
+#temp.show()
 temp.save("temp.png")
 
 abac, contours, hierarchy = cv2.findContours(gray, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
@@ -58,7 +61,7 @@ def overlap(row1, row2): # Note: will have to check against contlist also, to se
     else:
         return False
 
-def proximitycheck(matrix): # Current problem: There are some pictures getting stuck..Resolved
+def proximitycheck(matrix):
     """Returns a list of contours after merging close and overlapping contours.
     May need special case for when the matrix (input) has only one element"""
     output = []
@@ -162,6 +165,7 @@ with PyTessBaseAPI(psm=6) as api:
         cv2.rectangle(boxmask, (x_left, y_top), (x_right, y_bottom), color=255, thickness = -1) # originally thickness = -1
 
 cv2.imwrite('output.png', img & cv2.cvtColor(boxmask, cv2.COLOR_GRAY2BGR))
+cv2.imwrite('ingray.png', binary & boxmask)
 
 # Need to do some operations on the image before feeding it to OCR in order to improve accuracy:
 ocr_img = cv2.imread('output.png')
@@ -170,7 +174,7 @@ ocr_gray = cv2.cvtColor(ocr_img, cv2.COLOR_BGR2GRAY)
 # Do Otsu binarization on the image:
 ocr_otsu = cv2.threshold(ocr_gray, 0, 255, cv2.THRESH_OTSU)[1]
 ocr_ready = Image.fromarray(ocr_otsu)
-
+# Done with contour analysis (for now)
 # Finally, feed the whole processed image
 with PyTessBaseAPI(psm = 6) as api:
     api.SetImage(ocr_ready)
@@ -181,7 +185,7 @@ with PyTessBaseAPI(psm = 6) as api:
     f = open("output.txt", 'w')
     f.write(output_text)
     img = api.GetThresholdedImage()
-    img.show()
+    #img.show()
     print "Shape of thresholded image:  "
     print img.size
     # api.GetThresholdedImage().show()
@@ -217,7 +221,7 @@ with PyTessBaseAPI(psm = 6) as api:
         img = cv2.rectangle(img, (x, y), (x_2, y_2), (0, 255, 0), 3) # Draw a green rectangle around each character found by OCR
 
     out = Image.fromarray(img)
-    out.show()
+    #out.show()
     out.save("out.png")
     f.close()
     # Need to kill iterator to clear memory====
@@ -243,31 +247,49 @@ with PyTessBaseAPI(psm = 6) as api:
 
     smallest_lev = 1000
     index = 0
+    shifts = -1
     # Currently shifts the bounding rectangle of L1 of SKU one line down
     blanks = 0
+    interword_spaces = 0
     for line in ocr_data[0]:
+        print len(line)
         if len(line) == 0:
-            print "Soemhow have 0 length of line? "
+            print "Somehow have 0 length of line? "
         elif len(line) == 1:
             print "Blank line!"
-            blanks += 1
-        elif len(line) > 10:  # don't reject if is long enough to be L1 of SKU. May want to remove white-spaces from Line
+            blanks += 0 #  does not seem necessary to count the blanks since no position information for them anyways
+        elif 18 > len(line) > 10:  # don't reject if is long enough to be L1 of SKU. May want to remove white-spaces from Line
             for i in range(1, len(asn_data)): # asn_data[0] is just the titles
                 d = Levenshtein.distance(asn_data[i][3], line)
                 if d < smallest_lev:
                     smallest_lev = d
                     smallest_pos = i
-                    pos = index # sometimes pos turns out to be the wrong value..? Ends up referring to the line below instead of L1 of SKU.
-        index += 1
-    if blanks > 0:
+                    pos = index
+                    shifts = -1
+                    interword_spaces = 0
+        elif len(line) > 18: # may be a case where we have both item code and solid/assort code on the same line
+            # check substrings until find the best fit (in terms of Levenshtein). If any shifts needed, store in shifts
+            print "Have a line longer than 18"
+            for a in range(0, len(line)-18): # may want to try shorter substrings also..?
+                for i in range(1, len(asn_data)):
+                    d = Levenshtein.distance(asn_data[i][3], line[a: a + 17])
+                    if d < smallest_lev:
+                        smallest_lev = d
+                        smallest_pos = i
+                        pos = index
+                        shifts = a
+                        interword_spaces = line[a: a + 17].count(' ')
+        index += 1 # for outer loop, number of lines checked - 1
+
+    if blanks > 0: # Need further checking: is it correct? Use a case with blanks >= 2 to check.
         pos -= blanks-1
     print "Smallest Lev distance: " + str(smallest_lev) # Note: Whitespaces don't affect the pick of the best fit, but they do affect the given Levenshtein distance (score)
     if smallest_lev == 1:  # Since newline character is ignored
         print "Perfect match!"
     print "Found at position: " + str(smallest_pos)
-    print "Has value: " + asn_data[smallest_pos][3]  # The corresponding value of L1 SKU.
+    print "Has value: " + asn_data[smallest_pos][3]  # The corresponding item code
 
-    # The following are the details of L1 of SKU:
+    # The following are the details of the item code (from tesseract)
     x = ls[pos][1]['x']
     #print x
     y = ls[pos][1]['y']
@@ -278,28 +300,77 @@ with PyTessBaseAPI(psm = 6) as api:
     im_hw = im.copy()
     im = cv2.rectangle(im, (x, y), (x + w, y + h), (0, 0, 255), 3) # Bounding rectangle of the first line of SKU
     out = Image.fromarray(im)
-    out.show()# look at that lovely blue rectangle!
+    #out.show()# look at that lovely blue rectangle!
     out.save("out2.png")
     c = 20 # constant, needs fine-tuning
     x_min = x-c # initial guess
-    for oh in range(1, 4): # try the next 3 lines. Assumes there are at least 3 more lines after L1 of SKU
+    for oh in range(1, 4): # try the next 3 lines. Assumes there are at least 3 more lines after item code
         if (oh+pos) < len(ls): # check out of bounds
             if ls[oh+pos][1]['x'] < x_min:
                 x_min = ls[oh+pos][1]['x']
     x_hw1 = x_min - c
     y_hw1 = y + h
     x_hw2 = x + w
-    #print x_hw2
     y_hw2 = y + int(5.0*h) # needs calibration
+
     # The above relies on correctly finding the first line of SKU AND correctly cropping the image based on line detection
-    handwriting = cv2.imread(path)
+
+    handwriting = cv2.imread(path) # is this used for anything at all?
     gray = cv2.cvtColor(handwriting, cv2.COLOR_BGR2GRAY)
     boxmask = np.zeros(gray.shape, gray.dtype)
     cv2.rectangle(boxmask, (x_hw1, y_hw1), (x_hw2, y_hw2), color=255, thickness=-1) # coords, not distances for 2nd part
     # cv2.imwrite('output2.png', img & cv2.cvtColor(boxmask, cv2.COLOR_GRAY2BGR))
-    cv2.imwrite('output2.png', im_hw & cv2.cvtColor(boxmask, cv2.COLOR_GRAY2BGR))
+    # cv2.imwrite('output2.png', im_hw & cv2.cvtColor(boxmask, cv2.COLOR_GRAY2BGR)) # should contain the solid/assort code (and more)
 
+    if shifts >= 0: # may have solid/assort code on same line as the item code. Problem: don't have samples for checking this...
+        # need another boxmask
+        linecount = 0
+        print "May have solid/assort code on the same line as item code"
+        print "Shifts: " + str(shifts)
+        print "Pos: " + str(pos)
+        iterator = api.GetIterator() # is still stored in memory (hopefully)
+        iterator.Begin()
+        level = RIL.TEXTLINE
+        beginnings = 0
+        character_number = 0
+        x_top_left = 0
+        y_top_left = 0
+        x_bottom_right = 0
+        y_bottom_right = 0
+        for r in iterate_level(iterator, level): # r is a character, iterator goes through all lines...
+            if linecount == pos: # pos is the index of the position of the item code
+                x_top_left = r.BoundingBox(level)[0] # from start of line
+                y_top_left = r.BoundingBox(level)[1] # from start of line
+                y_bottom_right = r.BoundingBox(level)[3]
+                line_i = r # now each 'r' is a line. know the index of the correct line is 'pos', and lines stored in 'ls'
+                level_i = RIL.SYMBOL
+                # now want to exclusively access the line that is matching the item code...
+                for character in iterate_level(line_i, level_i): # and go through characters on this line
+                    character_number += 1
+                    if character.IsAtBeginningOf(RIL.TEXTLINE): # returns true when current character is at the beginning of a line
+                        beginnings += 1
+                    if beginnings < 2:
+                        x = character.BoundingBox(level_i)[0]
+                        y = character.BoundingBox(level_i)[1]
+                        x_2 = character.BoundingBox(level_i)[2]
+                        y_2 = character.BoundingBox(level_i)[3]
+                    elif beginnings == 2:
+                        break
+                    img = cv2.rectangle(img, (x, y), (x_2, y_2), (125, 0, 125), 3)  # Currently outlining all characters, on all lines, not just the applicable lines
+                    if character_number == (shifts + 17 - interword_spaces) and beginnings < 2: # check the parameter, is 16 acceptable?
+                        # Note: Using interword spaces in this way can lead to errors in extreme cases, but should normally work fine
+                        x_bottom_right = x_2
+                        if y_2 > y_bottom_right:
+                            y_bottom_right = y_2
+
+                img = cv2.rectangle(img, (x_top_left, y_top_left), (x_bottom_right, y_bottom_right), (20, 90, 200), 4)
+
+                break
+            linecount += 1
+        Image.fromarray(img).show() # display
+        cv2.rectangle(boxmask, (x_bottom_right, y_top_left), (x_hw2, y_bottom_right), color=255, thickness=-1) # coords, not distances for 2nd part
+        # cv2.imwrite('output2.png', img & cv2.cvtColor(boxmask, cv2.COLOR_GRAY2BGR))
+    cv2.imwrite('output2.png', im_hw & cv2.cvtColor(boxmask, cv2.COLOR_GRAY2BGR))
     # cv2.imwrite('output.png', img & cv2.cvtColor(boxmask, cv2.COLOR_GRAY2BGR))
     # gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    """To add: Automatic line rotation, in case some, but not all, of the printed lines are at a large angle.
-     Also, need to find ways to improve the probability of correctly finding line 1 (e.g. 341-172235(63-03)"""
+    """To add: Automatic line rotation, in case some, but not all, of the printed lines are at a large angle."""
