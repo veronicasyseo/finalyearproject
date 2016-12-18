@@ -3,7 +3,7 @@ Hugo, Sigurd, Kevinn and Veronica's Final Year Project @ HKUST 2017
 Six Sigma Green Belt project for X Company
 
 
-Extractandmergelines.py pre-processes images, and feeds them to Tesseract. The OCR output is interpreted. NOTE: in order to use, please create an empty txt file, output.txt in your project folder. Also, download ASN Example.csv from Google Drive. 
+Extractandmergelines.py pre-processes images, and feeds them to Tesseract. The OCR output is interpreted. NOTE: in order to use, please create an empty txt file, output.txt in your project folder. Also, download ASN Example.csv from Google Drive. No longer assumes the solid/assort code is below the item code, can also deal with cases where the codes are on the same line.
 
 
 Charextraction.py finds the locations of the hyphens in the Solid code. Based on this, each character from the Solid code is extracted, and saved on a 28x28 black background. The images can then be fed to tensorflow (or something else) to be read. To use, please first run extractandmergelines.py in order to generate the necessary input file. Future improvements: separation of touching handwritten characters, limiting the number of characters selected to 8 (ab-cde-fgh).
@@ -20,10 +20,9 @@ This will be useful for determining whether further image processing is needed f
 
 
 What needs to be done: 
- - [COMPLETED] Automatic character extraction (single characters) using opencv (could build on extractandmergelines.py.)
-- [COMPLETED] An idea finding the location of handwritten characters is to use Tesseract to find the location of the first line of the SKU, for example 341-172340(64-24). Then, we can send the text below to another kind of processing, such as CNN, since it is likely to have handwritten text. 
- - [COMPLETED] Based on ^, save single characters in 28x28 image files, where the characters take up 20x20 and are centered in a 28x28 grid. The purpose of this is to enable us use tensorflow for OCR on handwritten characters.
- - Need a large dataset for training tensorflow (multilayer convolutional neural network). Format should be [img, label], where img is a 28x28 image (see above) and label is the correct value of the character. 
+ - Find data set of segmented (single) letters A-Z and a-z.
+ - Find an appropriate way of reading handwritten characters.
+ - Implement a way to use histograms for segmentation and cleaning. 
  
 
 All code is written for python 2.7
