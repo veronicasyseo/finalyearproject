@@ -22,7 +22,7 @@ Letteraccuracy.py
 Using data from http://ai.stanford.edu/~btaskar/ocr/, for checking accuracy of reading single, handwritten, lowercase letters (a-z). Uses Tesseract, but you can replace it with whatever tool you want to test. To use this code, download the data from http://ai.stanford.edu/~btaskar/ocr/ and place it in your project folder. The number of data points is >50000, so the processing time is a bit long.
 
 What needs to be done: 
- - Find data set of segmented (single) letters A-Z (TO BE COMPLETED) and a-z (DONE).
+ - Find data set of segmented (single) letters A-Z (TO BE COMPLETED) and a-z (Dataset w/ larger resolution would be nice, the one mentioned above has 16x8).
  - Find an appropriate way of reading handwritten characters.
  - Implement a way to use histograms for segmentation and cleaning (NOT PRIORITIZED). 
  
