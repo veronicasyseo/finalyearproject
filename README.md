@@ -13,7 +13,7 @@ Finds the locations of the hyphens in the Solid code. Based on this, each charac
 
 
 ## Benchmark.py:
-Use to o simply use tesseract OCR on any image - will usually not be very accurate
+Use to simply use tesseract OCR on any image - will usually not be very accurate
 
 ## Histograms.py:
 Might be useful later. Is related to this paper (about segmenting handwriting): http://www.ee.bgu.ac.il/~dinstein/stip2002/Seminar_papers/David_Cahana_A%20character%20segmentation%20method%20using%20projection%20profile-based%20technique.pdf 
