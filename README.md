@@ -35,6 +35,7 @@ What needs to be done:
 
  - Find an appropriate way of reading handwritten characters.
  > Update 12/27/2016: Tried Tesseract with grayscale PNGs of handwritten digits made available at <http://www.cs.nyu.edu/~roweis/data.html>, success rate between 5-75%
+ 
  > To try/trying: use jTessBoxEditor (Java-based box editor) <http://vietocr.sourceforge.net/training.html> to train Tesseract for different fonts/handwriting -- make sure you have Java installed & ready to compile
 
  - Implement a way to use histograms for segmentation and cleaning (NOT PRIORITIZED). 
