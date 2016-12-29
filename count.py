@@ -1,3 +1,4 @@
+from __future__ import division
 import string
 
 chars = []
@@ -10,7 +11,7 @@ num_chars = len(chars)
 num_correct = 0;
 num_incorrect = 0
 
-digit = "0123456789"
+digit = "0" # or 1 or 2 or 3 or...
 for c in chars:
 	if c in digit:
 		num_correct += 1
@@ -19,3 +20,4 @@ for c in chars:
 
 print(num_correct)
 print(num_chars)
+print(num_correct / num_chars)
