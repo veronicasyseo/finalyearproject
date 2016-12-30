@@ -35,6 +35,20 @@ What needs to be done:
 
  - Find an appropriate way of reading handwritten characters.
  > Update 12/27/2016: Tried Tesseract with grayscale PNGs of handwritten digits made available at <http://www.cs.nyu.edu/~roweis/data.html>, success rate between 5-75%
+
+ > Update 12/30/2016:
+| File name                | # correct | # total chars | % accuracy |
+| -------------------------|:---------:| -------------:|-----------:|
+| Output of mnist_test0.txt| 663       | 1057          | 63%        |
+| " mnist_test1.txt        | 11        | 1221          | 1%         | 
+| " mnist_test2.txt        | 244       | 1014          | 24%        | 
+| " mnist_test3.txt        | 803       | 1051          | 76%        | 
+| " mnist_test4.txt        | 320       | 1166          | 27%        |
+| " mnist_test5.txt        | 491       | 1018          | 48%        |
+| " mnist_test6.txt        | 65        | 1432          | 5%         |
+| " mnist_test7.txt        | 823       | 1099          | 75%        |
+| " mnist_test8.txt        | 217       | 1154          | 19%        |
+| " mnist_test9.txt        | 209       | 1311          | 16%        | 
  
  > To try/trying: use jTessBoxEditor (Java-based box editor) <http://vietocr.sourceforge.net/training.html> to train Tesseract for different fonts/handwriting -- make sure you have Java installed & ready to compile
 
