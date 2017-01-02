@@ -30,8 +30,10 @@ Using data from http://ai.stanford.edu/~btaskar/ocr/, for checking accuracy of r
 Simple script to calculate the # of correctly identified chars and the # of incorrectly identified chars. Manipulate the string ```digit``` to change output. Default input file is ```output.txt```
 
 What needs to be done: 
- - Find data set of segmented (single) letters A-Z (TO BE COMPLETED) and a-z (Dataset w/ larger resolution would be nice, the one mentioned above has 16x8).
+ - Find data set of segmented (single) letters A-Z (COMPLETED?) and a-z (Dataset w/ larger resolution would be nice, the one mentioned above has 16x8).
  > Update 12/29/2016: I uploaded English_Handwritten_Pngs with single letters (A-Za-z, 55 samples each) found here <http://www.ee.surrey.ac.uk/CVSSP/demos/chars74k/>
+ 
+ > Update 12/31/2016: I uploaded a decent amount of segmented, handwritten, samples to our google drive (>400,000 digits and 800,000 characters (A-Z, a-z and 0-9)). Please check the "Pickled_data" folder to access the data.
 
  - Find an appropriate way of reading handwritten characters.
  > Update 12/27/2016: Tried Tesseract with grayscale PNGs of handwritten digits made available at <http://www.cs.nyu.edu/~roweis/data.html>, success rate between 5-75%
