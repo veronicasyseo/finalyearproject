@@ -1,0 +1,36 @@
+Progress Report 2: December 2016
+
+HKUST Final Year Project Group 1
+Hugo Fan
+Sigurd Berg
+Kevinn Wong
+Veronica Seo
+
+Submitted: January 2, 2017
+
+_Executive Summary_
+
+
+Part 1: Testing accuracy of Tesseract on large datasets
+
+Tesseract has been the team's primary choice of software. The software was originally developed by HP and has been maintained by Google since 2006. We chose to use Tesseract as it is widely regarded as the most accurate commercial-level Optical Character Recognition tool for printed characters.
+
+We were asked to test Tesseract's accuracy in recognizing handwritten character samples provided by Kerry. A test of accuracy on handwritten single characters has been carried out, which will be explained in detail below.
+
+The largest data set we have sourced is from NIST (Special Database 19), which contains 800,000 segmented, handwritten, labeled characters (including A-Za-z, 0-9). The NIST data set has made available samples, each a 28 x 28 grayscale image. As long as this data set is representative of those written on inbound cartons, a data set this size should be sufficient to train Tesseract to better recognize handwriting.
+
+Additional, albeit smaller, data sets have been sourced from archives made public by New York University, University of Surrey, University of California at Irvine and other similar institutions. These are primarily data sets of handwritten digits.
+
+Guyon et al (1996) asserted that data (in our case, images) used to train a character recognition software should be derived from the same source as the area in which the technology will be applied, with the reason being that the technology may underperform if otherwise [Data Sets for OCR and Document Image Understanding Research, August 1996]. Other papers have also stated that it is common practice to use 1000 samples per character when testing the accuracy of OCR methods.
+
+With this in mind, for the purpose of training Tesseract, we will most likely have to create our own data set of segmented handwritten characters from box samples - which will require much more effort and input - or make sure that the data sets we have acquired are indeed relevant to our application.
+
+
+Part 2: Next steps
+jTessBoxEditor - box trainer written in Java that can be trained
+
+Part 3: Further questions and requests
+We would like to pass on a few questions and requests for the Kerry Team in moving forward.
+(1)
+(2)
+(3)
