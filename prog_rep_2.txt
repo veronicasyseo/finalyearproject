@@ -4,10 +4,11 @@ HKUST x Kerry Logistics Final Year Project Group 1
 Hugo Fan
 Sigurd Berg
 Kevinn Wong
-Veronica Seo
+Veronica Seo <syseo@connect.ust.hk>
+
+Cc: Professor Richard So <rhyso@ust.hk>
 
 Submitted: January 2, 2017
-
 
 Introduction
 
@@ -21,7 +22,6 @@ After a team meeting with Ms. Nicky Choi on the 19th of December, 2016, we were 
 
 Ms. Choi also requested a biweekly update of any changelogs that were made in the weeks prior, effective immediately. This is the first in the series of biweekly updates that will be delivered to Kerry in January 2017.
 
-
 Part 1: Testing accuracy of Tesseract on large datasets
 
 Tesseract has been the team's primary choice of software. The software was originally developed by HP and has been maintained by Google since 2006. We chose to use Tesseract as it is widely regarded as the most accurate commercial-level Optical Character Recognition tool for printed characters.
@@ -32,16 +32,194 @@ The largest data set we have sourced is from NIST (Special Database 19), which c
 
 Additional smaller data sets have been sourced from archives made public by New York University, University of Surrey, University of California at Irvine and other similar institutions. These are primarily data sets of handwritten digits, and are in black-and-white JPG format.
 
-Guyon et al (1996) asserted that data (in our case, images) used to train a character recognition software should be derived from the same source as the area in which the technology will be applied, with the reason being that the technology may underperform if otherwise [Data Sets for OCR and Document Image Understanding Research, August 1996]. Other papers have also stated that it is common practice to use 1000 samples per character when testing the accuracy of OCR methods.
+Guyon et al (1996) asserted that data (in our case, images) used to train a character recognition software should be derived from the same source as the area in which the technology will be applied, with the reason being that the technology may underperform if otherwise [Data Sets for OCR and Document Image Understanding Research, August 1996: found here]. Other papers have also stated that it is common practice to use 1000 samples per character when testing the accuracy of OCR methods.
 
 With this in mind, for the purpose of training Tesseract, we will most likely have to create our own data set of segmented handwritten characters from box samples - which will require much more effort and input - or make sure that the data sets we have acquired are indeed relevant to our application.
 
 
 Part 2: Next steps (for first half of January 2017)
-jTessBoxEditor - box trainer written in Java that can be trained
+We will spend the next month training Tesseract to yield a higher percentage accuracy, using the data sets found and the photographs provided by Ms. Choi. A tool that we will use in the process is jTessBoxEditor - a box editor written in Java that can be trained to recognize different fonts, in this case handwriting.
 
-Part 3: Further questions and requests
+2.1 Further questions and requests
 We would like to pass on a few questions and requests for the Kerry Team in moving forward.
-(1)
-(2)
-(3)
+
+Firstly, we request more samples, i.e. pictures of boxes. These samples are to be used towards improving our image processing methods, and at a later stage also for testing the accuracy of character recognition.
+
+We would be very grateful if the photos were taken according to these guidelines:
+Images captured either in a bright room or with the use of the flash function on the camera, because some warehouse features were dimly lit;
+Avoid capturing any “noise” i.e. only pictures of the box itself is needed, to facilitate image processing;
+Only the side of the box displaying SKU information is necessary to be photographed.
+
+Secondly, we would like to pass on some queries we have:
+Are the brackets ‘(‘ and ‘)’ in the solid code ever handwritten?
+In what scenarios is it applicable to recognize lowercase letters? (As far as we can remember, we have only seen uppercase letters used in the assort code)
+
+
+
+Appendix 1: Accuracy of Tesseract on Single, Handwritten Digits
+
+As requested, a test of the accuracy of Tesseract on handwritten, single characters has been carried out. 
+
+Tesseract is regarded as one of the best open-source solutions for optical character recognition (OCR). It is designed to work on printed characters, but in this test it was used to read handwritten characters. As our results show, the accuracy is not impressive in this case. 
+
+
+Settings: 
+The following settings were used with Tesseract: 
+Page segmentation method: Treat each image as a single character. 
+Whitelist: Tesseract was instructed to only consider the following characters: abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0987654321-.:/()
+
+Tesserocr 2.1.2 was used. It is a cython-compatible api for Tesseract.
+
+
+Inputs: 
+5000 samples, shown in Digits.png, were used for testing accuracy on single handwritten digits. 500 samples were used for each digit 0, 1, 2, …, 10.
+
+Digits.png was separated into 5000 smaller images, of sizes 20x20 pixels. The below is an example of what the images look like after being extracted from digits.png: 
+ (original size, 20x20)
+
+ (enlarged for visibility)
+
+Each image was used as input in turn, and Tesseract performed 5000 classifications.
+
+
+Results: 
+The overall accuracy was 31.5%. Out of 5000 samples, 1575 of them were correctly categorized. 
+
+The accuracies for each digit are shown in the following table (each digit has sample size 500): 
+
+Digit
+Correct
+Accuracy (%)
+0
+177
+35.4
+1
+62
+12.4
+2
+73
+14.6
+3
+342
+68.4
+4
+110
+22.0
+5
+237
+47.4
+6
+86
+17.2
+7
+393
+78.6
+8
+36
+7.2
+9
+59
+11.8
+Total
+1575
+31.5
+ 
+It may be useful to know what kind of mistakes Tesseract made. It is not practical to create the confusion matrix in this case, since we are dealing with 10 different numbers, 26 upper-case letters, 26 lower-case letters and 6 kinds of special characters:	 .:/-()
+
+Instead, the incorrect readings are given below, and have been sorted to make it easier to interpret.
+
+Incorrect readings: 
+
+The incorrect readings for 0 were: 
+).........../11111144666666AACDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDGGIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIJJJOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOUUaaaaaaaaaaaaaaaaaaabbbcdddddddddlllllllllllllnnnoooooooooooorrttx
+
+The incorrect readings for 1 were: 
+(())/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////447IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIJKLLXdillllllllllllllllllllllllllllllllllllllllllllll
+
+The incorrect readings for 2 were:  ))......................................................................................../111111111111111111111111111111111111111111111111111111111111111111111333333333333333333334467999AAAAAAAAAAAAAAAAADIIIIJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLQQQQQQRRRVVVVVVVVVVVVVXXZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZaaaaaaaaaaaaaaaaaacgiiiillllllllllllllllllllllllllllllllllqrtyzzzz
+
+The incorrect readings for 3 were: 
+)...1115555555555555555555555555555555555555555555555555555555555555556667777778899EEEJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJKSSSSSSSVVZZZZZZZZZZaabbbbdgiiijlss
+
+The incorrect readings for 4 were:          .........01577777779999999999999AAAAAAAAAAAAAAAAAAAHHHHHHHHHHHHHHHHHHHHHHHHHIJJKMMNQQQQRTUUUUVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVWWYYYYYYaaaaaafffffffffggggggggghiiikklqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqtuuuuuuuuuuuuuuuvwxyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
+
+The incorrect readings for 5 were:   (...........3346666666677799:::BCEEEEEEEEEFGIIIIIIIIIIIIIIIIIIIIIIIIIIJJKKKKQRSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSTYYYffffffffffffffffffffffffffffffffffffffffffffffffggggggggggggiiiiiiiiiiqqqrrrrrrrrrrrrrrrrrrrrrrrrrrrrrssssssyy
+
+The incorrect readings for 6 were:                            (((............................................................................................................................................................................................../00000144444444444444444444555555559AAAAAAAAAAAAAAAAAAABCCCCEGGGGGGGGGGGGIIIIIIIIIIIKKKKKKLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLQQQSUUZaaaaaabbbbbbbbbbbbbbbbbbbbbbbbdeeeefghhhhiiiiiiiklllllllllortttuv
+
+The incorrect readings for 7 were:  ).0111111111111111111111111111111111111111111111111113344444499IIIPQTTUVWWWWWWWagqqqqqqqqqqqqqqqrryyy
+
+The incorrect readings for 8 were:    (--........................................................................................................111111111111111111111111111122222223333333335555555666667777777799999999999::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::ABBEEEEEEEEEEFFFFFFGIIIIIIIIIIIIIIIIIIIIIIIIIJJJJJJKKKKKKKLLPPPPRSVXXXXYYYYYYYYYYYYZZZZaaabfffffffffffffffffffgiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiikkllllllrrrrrrrrrrrrrrrrrrrrttttttttvxxxzzzzzzzzzzzzz
+
+The incorrect readings for 9 were:    -.................................................................................................................................................................................................................................................................../001111111133333444444555777777777777777777777777777777777777777777777777777777777777DIIIIIQQQQSVVVVWaaaaaffgggilqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqrv
+
+
+Conclusion: 
+Tesseract’s performance on single, handwritten digits is not impressive at 31.5% overall. 
+This is not unexpected, because Tesseract is built for recognizing printed characters.
+Also, Tesseract usually makes use of a built-in dictionary to improve accuracy, which only applies to words and cannot be used for single characters.
+This is only one of many ways in which Tesseract draws on the context to improve accuracy. 
+
+This test was only conducted on digits. If desired, tests could also be performed on single, handwritten letters (A-Z), although these results with a sample size of 5000 already give some indications about the weaknesses of Tesseract.
+
+Update Dec 27, 2016:
+
+Similarly, a test of Tesseract accuracy for MNIST-provided testing PNGs was conducted and yielded the below results:
+
+File Name
+# correct
+# total chars
+accuracy
+% accuracy
+output_mnist_test0.txt
+663
+1057
+0.627246925
+63%
+output_mnist_test1.txt
+11
+1221
+0.009009009
+1%
+output_mnist_test2.txt
+244
+1014
+0.240631164
+24%
+output_mnist_test3.txt
+803
+1051
+0.764034253
+76%
+output_mnist_test4.txt
+320
+1166
+0.274442539
+27%
+output_mnist_test5.txt
+491
+1018
+0.482318271
+48%
+output_mnist_test6.txt
+65
+1432
+0.045391061
+5%
+output_mnist_test7.txt
+823
+1099
+0.748862602
+75%
+output_mnist_test8.txt
+217
+1154
+0.188041594
+19%
+output_mnist_test9.txt
+209
+1311
+0.15942029
+16%
+
+
