@@ -31,7 +31,7 @@ Using data from http://ai.stanford.edu/~btaskar/ocr/, for checking accuracy of r
 ## Count.py:
 Simple script to calculate the # of correctly identified chars and the # of incorrectly identified chars. Manipulate the string ```digit``` to change output. Default input file is ```output.txt```
 
-What needs to be done: 
+## What needs to be done: 
  - Find data set of segmented (single) letters A-Z (COMPLETED?) and a-z (Dataset w/ larger resolution would be nice, the one mentioned above has 16x8).
 
  > Update 12/29/2016: I uploaded English_Handwritten_Pngs with single letters (A-Za-z, 55 samples each) found here <http://www.ee.surrey.ac.uk/CVSSP/demos/chars74k/>
@@ -50,5 +50,5 @@ What needs to be done:
 
 **All code is written for python 2.7**
 
-Lots of papers on OCR, and about segmentation of handwritten characters:  
+### Lots of papers on OCR, and about segmentation of handwritten characters:  
 http://iris.usc.edu/Vision-Notes/bibliography/contentschar.html#OCR,%20Document%20Analysis%20and%20Character%20Recognition%20Systems
