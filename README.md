@@ -2,6 +2,12 @@
 Hugo, Sigurd, Kevinn and Veronica's Final Year Project @ HKUST 2017
 Six Sigma Green Belt project for X Company
 
+## knn.py: 
+Based on http://docs.opencv.org/3.0-beta/doc/py_tutorials/py_ml/py_knn/py_knn_understanding/py_knn_understanding.html and http://docs.opencv.org/3.0-beta/doc/py_tutorials/py_ml/py_knn/py_knn_opencv/py_knn_opencv.html.
+Used for classificaiton of handwriting.
+Tried with 20,000 training data and 20,000 test data (digits 0-9) and achieved 97.81% accuracy with parameter k = 5. 
+Please use the pickles from our google drive as data.
+The code takes a few minutes to run if you have lots of data. 
 
 ## Extractandmergelines.py:
 Pre-processes images, and feeds them to Tesseract. The OCR output is interpreted. NOTE: in order to use, please create an empty txt file, output.txt in your project folder. Also, download ASN Example.csv from Google Drive. No longer assumes the solid/assort code is below the item code, can also deal with cases where the codes are on the same line.
