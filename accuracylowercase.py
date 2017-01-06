@@ -5,7 +5,7 @@ from tesserocr import PyTessBaseAPI
 import pickle
 
 # Load data:
-input_file = "/Users/sigurdandersberg/PycharmProjects/proj1/SD19_chars_28x28_20000.pickle" # may need >1 file
+input_file = "path to pickle" 
 data = pickle.load(open(input_file))
 
 # Initialize
