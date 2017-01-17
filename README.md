@@ -2,6 +2,10 @@
 Hugo, Sigurd, Kevinn and Veronica's Final Year Project @ HKUST 2017
 Six Sigma Green Belt project for X Company
 
+## GUI.py: 
+Simple GUI, making it more convenient to test our program on sample images.
+Uses Tkinter, so it should run on both Mac and Windows.
+
 ## knn.py: 
 Based on http://docs.opencv.org/3.0-beta/doc/py_tutorials/py_ml/py_knn/py_knn_understanding/py_knn_understanding.html and http://docs.opencv.org/3.0-beta/doc/py_tutorials/py_ml/py_knn/py_knn_opencv/py_knn_opencv.html.
 Used for classificaiton of handwriting.
@@ -9,7 +13,7 @@ Tried with 20,000 training data and 20,000 test data (digits 0-9) and achieved 9
 Please use the pickles from our google drive as data.
 The code takes a few minutes to run if you have lots of data. 
 
-## Extractandmergelines.py: (outdated, update coming)
+## Extractandmergelines.py: (outdated, See GUI.py)
 Pre-processes images, and feeds them to Tesseract. The OCR output is interpreted. NOTE: in order to use, please create an empty txt file, output.txt in your project folder. Also, download ASN Example.csv from Google Drive. No longer assumes the solid/assort code is below the item code, can also deal with cases where the codes are on the same line.
 
 Command line format (using Terminal): ```tesseract pic.png output``` then to view ```open -e (or -a "app_name") output.txt```
@@ -26,7 +30,7 @@ Use to simply use tesseract OCR on any image - will usually not be very accurate
 ## Histograms.py:
 Might be useful later. Is related to this paper (about segmenting handwriting): http://www.ee.bgu.ac.il/~dinstein/stip2002/Seminar_papers/David_Cahana_A%20character%20segmentation%20method%20using%20projection%20profile-based%20technique.pdf 
 
-## Interpretoutput.py: 
+## Interpretoutput.py: (outdated)
 Given a txt file containing the OCR output from the initial pre-procesing and an advance shipment notice (ASN) in csv format (see google drive), it categorizes each line of text into the following categories:
 Item code, solid (assort) code, quantity, box number, item description, or "nothing". 
 This will be useful for determining whether further image processing is needed for a particular input image. 
