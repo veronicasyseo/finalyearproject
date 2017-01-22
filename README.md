@@ -2,6 +2,9 @@
 Hugo, Sigurd, Kevinn and Veronica's Final Year Project @ HKUST 2017
 Six Sigma Green Belt project for X Company
 
+## Hybrid.py: 
+Progress on implementation of the paper mentioned. Is processing images with complex backgrounds. Feel free to continue the work. Have reached the stage where we need to implement 'bwboundaries' or something equivalent.
+
 ## GUI.py: 
 Simple GUI, making it more convenient to test our program on sample images.
 Uses Tkinter, so it should run on both Mac and Windows.
