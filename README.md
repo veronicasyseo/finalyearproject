@@ -7,6 +7,8 @@ Six Sigma Green Belt project for X Company
 Implementation of the paper mentioned (with a bunch of modifications). Is processing images with complex backgrounds. 
 
 ## GUI.py: 
+> Update 02/08/2017: Added hybrid.py to the GUI, and started work on interpreting text outputs from Tesseract.
+
 Simple GUI, making it more convenient to test our program on sample images.
 Uses Tkinter, so it should run on both Mac and Windows.
 
