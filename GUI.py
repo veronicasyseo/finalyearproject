@@ -2,22 +2,29 @@
 # -*- coding: iso-8859-1 -*-
 
 import Tkinter
-from PIL import ImageTk, Image
-from tkFileDialog import askopenfilename
-from tesserocr import PyTessBaseAPI, RIL, iterate_level
-import numpy as np
-import cv2
-from skimage import feature
-from skimage import measure
-from scipy import ndimage as ndi
 import csv
+import time
+from tesserocr import PyTessBaseAPI, RIL, iterate_level
+from tkFileDialog import askopenfilename
+
 import Levenshtein  # may or may not be used
+import cv2
+import numpy as np
+from PIL import ImageTk, Image
+from scipy import ndimage as ndi
+
 
 class simpleapp_tk(Tkinter.Tk):
     def __init__(self, parent):  # constructor
         Tkinter.Tk.__init__(self, parent)
         self.parent = parent  # keep track of our parent
         self.initialize()
+        self.asn_data = []
+        self.match_instance = 0
+        self.ASN_loaded = False
+
+    def setMatcher(self, matcher_instance):
+        self.match_instance = matcher_instance
 
     def initialize(self):  # will be used for creating all the widgets
         self.width = 400
@@ -47,15 +54,15 @@ class simpleapp_tk(Tkinter.Tk):
         self.label2.grid(column=1, row=0)
 
         # label for displaying text output
-        self.displayVar = Tkinter.StringVar()
-        self.displayVar.set("OCR output will be displayed here!")
+        # self.displayVar = Tkinter.StringVar()
+        # self.displayVar.set("OCR output will be displayed here!")
         self.label3 = Tkinter.Label(self, text="OCR output will be displayed here!")  # text vs textvariable
         self.label3.grid(column=2, row=0)
 
         # label for displaying candidates
-        self.displayCands = Tkinter.StringVar()
-        self.displayCands.set("Candidates will be displayed here! (to be implemented)")
-        self.label4 = Tkinter.Label(self, textvariable=self.displayCands)
+        # self.displayCands = Tkinter.StringVar()
+        # self.displayCands.set("Candidates will be displayed here! (to be implemented)")
+        self.label4 = Tkinter.Label(self, text="Candidates will be displayed here!")
         self.label4.grid(column=0, row=2)
 
         # dropdown menu for selecting image processing procedure
@@ -70,9 +77,19 @@ class simpleapp_tk(Tkinter.Tk):
         self.update()
         self.geometry(self.geometry())
 
+    def OnButtonClickASN(self):
+        CSVName = askopenfilename()
+        loader = CSVLoader(CSVName)
+        self.asn_data = loader.Load()  # what is the data needed for?
+
+        if len(self.asn_data) > 0:
+            self.ASN_loaded = True
+            self.match_instance = matcher(self.asn_data)
+
     def OnButtonClickLoad(self):
         filename = askopenfilename()  # prompts user to choose a file
         self.filename = filename
+
         img2 = Image.open(filename)  # what if user cancelled?
         img2 = img2.resize((self.width, self.height), Image.ANTIALIAS)
         img2 = ImageTk.PhotoImage(img2)
@@ -104,20 +121,26 @@ class simpleapp_tk(Tkinter.Tk):
             text, img = processor.Hybrid()
             self.DisplayProcessed(img.resize((self.width, self.height), Image.ANTIALIAS))
             self.DisplayOCRText(text)
+            interpreter = outputInterpreter(text)
+            text, categories = interpreter.categorizeLines()
+            # at this point, want to look for candidates, but only if the ASN has already been loaded
+            # could prompt user to load the ASN if not already done at this point
+            # the below will fail if the ASN is not loaded
+            # keep it optional for now to load ASN, in order to faciliate testing
+            if self.ASN_loaded:
+                itemcode_cands, itemcode_indeces = self.match_instance.boxFinder(text, categories)
+                print itemcode_cands
+                self.DisplayCands(itemcode_cands)
+            # then process the outputs appropriately, followed by ASN
         else:
             print "Method selection error!"
-
-    def OnButtonClickASN(self):
-        CSVName = askopenfilename()
-        loader = CSVLoader(CSVName)
-        asn_csv_array = loader.Load()
 
     def DisplayProcessed(self, image_processed):
         image_processed = ImageTk.PhotoImage(image_processed)
         self.label2.config(image=image_processed)
         self.label2.image = image_processed
 
-    def func(self, value):
+    def func(self, value):  # what does this do? is it called at all?
         self.method = value
         # print self.method
 
@@ -126,8 +149,10 @@ class simpleapp_tk(Tkinter.Tk):
             text = "Use other image processing methods!"
         self.label3.config(text=text)
 
-    def DisplayCands(self, text):
-        pass  # to be implemented 
+    def DisplayCands(self, candidates):  # set area for the candidates, should have one cand. per line, and at most 10 cands
+        if len(candidates) == 0:
+            candidates = "No candidates!"
+        self.label4.config(text=candidates)
 
 class img_processor():
     def __init__(self, filename):
@@ -144,15 +169,22 @@ class img_processor():
             return text_output, image_processed
 
     def Basic(self, thresholded):
+        load_time = time.clock()
         with PyTessBaseAPI(psm=6) as api:
             api.SetVariable("tessedit_char_whitelist", "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0987654321-.:/()")
             api.SetImage(thresholded)
-            text_output = api.GetUTF8Text()
+            text_output = api.GetUTF8Text().encode('utf-8')
             image_processed = api.GetThresholdedImage()
+            end_time = time.clock()
+            print "Tesseract time: " + str(end_time - load_time)
             return text_output, image_processed
 
     def Hybrid(self):
+        tic = time.clock()
         img = cv2.imread(self.filename)
+        load_time = time.clock()
+        print "Load time: " + str(load_time - tic)
+        contour_area_min = 700
 
         # next split image into the three RGB channels
         img_red = img[:, :, 0]
@@ -160,45 +192,50 @@ class img_processor():
         img_blue = img[:, :, 2]
         print img_red.shape
         # perform Canny edge detector on each channel since text may be found in any of the channels -- but which parameters to use?
-        edge_red = feature.canny(img_red)
-        edge_green = feature.canny(img_green)
-        edge_blue = feature.canny(img_blue)
+        # edge_red = feature.canny(img_red)
+        # edge_green = feature.canny(img_green)
+        # edge_blue = feature.canny(img_blue)
+        edge_red = cv2.Canny(img_red, 50, 100)
+        edge_green = cv2.Canny(img_green, 50, 100)
+        edge_blue = cv2.Canny(img_blue, 50, 100)
+        # Can try cv2.Canny(image_input, lower, upper) with e.g. lower=100, upper=200
+        # the params are for removing and detecting noise
         edge_assimilated = np.logical_or(edge_red, np.logical_or(edge_green, edge_blue))  # boolean array
-
+        canny_time = time.clock()
+        print "Canny time: " + str(canny_time - load_time)
         # Next, want to do both horizontal and vertical dilation with 1x3 and 3x1 structuring elements
         # Note: paper suggests 1x3 and 3x1, but in our application 5x1 and 1x5 might work better
         strel1 = np.zeros((5, 5))
         for i in range(0, 5):
             strel1[2][i] = 1
-
+        # horizontal dilation
         edge_dim_1 = ndi.binary_dilation(edge_assimilated, structure=strel1)
 
         strel2 = np.zeros((5, 5))
 
         for j in range(0, 5):
             strel2[j][2] = 1
-
+        # vertical dilation
         edge_dim_2 = ndi.binary_dilation(edge_assimilated, structure=strel2)
-
+        # combine the results with OR operator
         edges_dil_comb = np.logical_or(edge_dim_1, edge_dim_2)
-        all_labels = measure.label(edges_dil_comb, neighbors=8, connectivity=2).astype(
-            'uint8')  # same dimensions as image
-
+        # all_labels = measure.label(edges_dil_comb, neighbors=8, connectivity=2).astype('uint8')  # same dimensions as image
+        all_labels = edges_dil_comb.astype('uint8')
+        # the above step may not be necessary? If skip, convert edges_dil_comb to 'uint8'
         im2, abac, hierarchy = cv2.findContours(all_labels.copy(), cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE)
 
         hierarchy = hierarchy[0]  # get the useful stuff only
 
         # filter contours based on area (reject small ones, which are definitely noise)
         large_contours = []
-        lower_area_bound = 700  # MUST be calibrated so that no text is removed..700 seems appropriate
         for contour in zip(abac, hierarchy):
-            if cv2.contourArea(contour[0]) > lower_area_bound:  # contour[1][2] > 0
+            if cv2.contourArea(contour[0]) > contour_area_min:  # contour[1][2] > 0
                 large_contours.append(contour[0])
         print "Number of contours left: " + str(len(large_contours))  # all of these will be processed,so more -> slower
-        black_bg = np.zeros((img_red.shape[0], img_red.shape[1], 3), dtype='uint8')
+        # black_bg = np.zeros((img_red.shape[0], img_red.shape[1], 3), dtype='uint8')
 
         # The following two lines may be commented out, they are just for visualizing the contours
-        cv2.drawContours(black_bg, large_contours, -1, (0, 255, 0), 3)
+        # cv2.drawContours(black_bg, large_contours, -1, (0, 255, 0), 3)
         # Image.fromarray(black_bg).show()
 
         # use grayscale intensities to filter: m - k*s. m is mean, s is sd (m, s con component-specific. k is parameter)
@@ -216,7 +253,7 @@ class img_processor():
             cv2.drawContours(cimg_outline, large_contours, i, color=255, thickness=1)  # Draw the contour outline only
             pts_outline = np.where(cimg_outline == 255)
             gs_vals_outline = grayscale[pts_outline[0], pts_outline[1]]
-            intensity_fg = np.mean(gs_vals_outline)
+            intensity_fg = np.mean(gs_vals_outline)  # what is this used for?
 
             cimg_inside = np.zeros((img_red.shape[0], img_red.shape[1]), dtype='uint8')
             cv2.drawContours(cimg_inside, large_contours, i, color=255,
@@ -227,13 +264,13 @@ class img_processor():
             mean_cp, sd_cp = cv2.meanStdDev(grayscale[pts_cp[0], pts_cp[1]])
 
             # Stats for inside (excludes boundary pts) -- may need to exclude more pts later!! (thickness)
-            cimg_inside_only = cimg_inside - cimg_outline  # subtract the boundaries from the contours
-            pts_inside = np.where(cimg_inside_only == 255)
-            gs_vals_inside = grayscale[pts_inside[0], pts_inside[1]]
-            intensity_bg = np.mean(gs_vals_inside)
+            # cimg_inside_only = cimg_inside - cimg_outline  # subtract the boundaries from the contours
+            # pts_inside = np.where(cimg_inside_only == 255)
+            # gs_vals_inside = grayscale[pts_inside[0], pts_inside[1]]
+            # intensity_bg = np.mean(gs_vals_inside)
 
             # Thresholding (want to cvt to binary, and remove non-text pixels)
-            if intensity_fg < intensity_bg:  # Note: this part is changed from the paper (inverted, actually)
+            if intensity_fg < mean_cp:  # Note: this part is changed from the paper (inverted, actually)
                 k_cp = 0.05
                 threshold_cp = mean_cp - (k_cp * sd_cp)
                 ret, thresh = cv2.threshold(grayscale.copy(), threshold_cp, 255,
@@ -245,6 +282,8 @@ class img_processor():
                 ret, thresh = cv2.threshold(grayscale.copy(), threshold_cp, 255,
                                             cv2.THRESH_BINARY_INV)  # originally THRESH_BINARY
                 mask_accepted = cv2.bitwise_and(thresh, cimg_inside)
+                # debugging: interested in knowing whether this part is triggered at all
+                # print "Triggered: the outline intensity is larger than the inside intensity (in grayscale)"
 
             bg_for_final -= mask_accepted
 
@@ -256,47 +295,48 @@ class img_processor():
         im2_out, conts, hierch = cv2.findContours(bg_for_final, cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)
 
         accepted_conts = []
-        largest_area = 2000  # this is just for debugging, to be removed later
+        # largest_area = 2000  # this is just for debugging, to be removed later
+
         for i in range(0, len(conts)):
             area = cv2.contourArea(conts[i])
-            if area > 700:
+            if area > contour_area_min:
                 accepted_conts.append(conts[i])
-                if area > largest_area:  # for debugging
-                    largest_area = area
+                # if area > largest_area:  # for debugging
+                    # largest_area = area
 
-        print "Largest contour area: " + str(largest_area)
+        # print "Largest contour area: " + str(largest_area)
 
         bg_for_density_prime = np.zeros((img_red.shape[0], img_red.shape[1]), dtype='uint8')
-
-        for i in range(0, len(accepted_conts)):
-            bg_for_density = np.zeros((img_red.shape[0], img_red.shape[1]), dtype='uint8')
-            cv2.drawContours(bg_for_density, accepted_conts, i, color=255, thickness=-1)
-            pts_col = np.where(bg_for_density == 255)
+        cv2.drawContours(bg_for_density_prime, accepted_conts, -1, color=255, thickness=-1)
+        """for i in range(0, len(accepted_conts)):
+            # bg_for_density = np.zeros((img_red.shape[0], img_red.shape[1]), dtype='uint8')
+            # cv2.drawContours(bg_for_density, accepted_conts, i, color=255, thickness=-1)
+            # pts_col = np.where(bg_for_density == 255)
             cv2.drawContours(bg_for_density_prime, accepted_conts, i, color=255, thickness=-1)
             # Get values, both zero and non-zero
-            vals_for_numerator = bg_for_final[pts_col[0], pts_col[1]]
-            vals_for_denominator = bg_for_density[pts_col[0], pts_col[1]]
+            # vals_for_numerator = bg_for_final[pts_col[0], pts_col[1]]
+            # vals_for_denominator = bg_for_density[pts_col[0], pts_col[1]]
 
-            numerator = 0
+            # numerator = 0
 
-            for ele in vals_for_numerator:
-                if ele > 100:
-                    numerator += 1
+            # for ele in vals_for_numerator:
+                # if ele > 100:
+                    # numerator += 1
 
-            denominator = len(vals_for_denominator)
+            # denominator = len(vals_for_denominator)
             # print denominator
 
-            density = 1.0 * numerator / denominator
+            # density = 1.0 * numerator / denominator
             # print " Density: " + str(density)
-            threshold_density = 0.20  # calibration needed
+            # threshold_density = 0.20  # calibration needed
             # The following part does pretty much nothing so far
-            if density > threshold_density:  # this rarely triggers, look into how to apply it
-                bg_for_final[pts_col[0], pts_col[1]] = 0
-                print " Triggered, m8! "
-
+            # if density > threshold_density:  # this rarely triggers, look into how to apply it
+                # bg_for_final[pts_col[0], pts_col[1]] = 0
+                # print " Triggered, m8! "
+"""
         # Do comparison: logical_and for the two background images (nonzero)
 
-        final_result_I_hopeD = np.logical_and(bg_for_final, bg_for_density_prime)
+        final_result_I_hopeD = np.logical_and(bg_for_final, bg_for_density_prime)  # may be gone if changes are made above
 
         keep_going = final_result_I_hopeD.astype('uint8') * 255  # values 0 or 255 only
 
@@ -304,7 +344,9 @@ class img_processor():
 
         where_to_look = np.where(keep_going == 255)
         gs_mean, gs_sd = cv2.meanStdDev(grayscale[where_to_look[0], where_to_look[1]])
-        thresh_gs_val = gs_mean + (0.25 * gs_sd)
+        thresh_gs_val = gs_mean + (0.75 * gs_sd)  # need to calibrate. Tried: +0.25, +0.45, +0.75, +1.10
+        # +1.10 too high, reintroduces noise 3
+        # +0.75 too low, but at least minimal noise only reintroduced. -> dilation
         ret, thresh = cv2.threshold(grayscale.copy(), thresh_gs_val, 255,
                                     cv2.THRESH_BINARY)  # this is a global threshold with carefully derived threshold
         # Image.fromarray(thresh).show()  # is entire image, want overlapping parts only
@@ -312,7 +354,10 @@ class img_processor():
         the_end_image = Image.fromarray(the_end_mate.astype('uint8') * 255)
         # the_end_image.show()
         # cv2.imwrite('outputbinary.png', 255 - the_end_mate.astype('uint8') * 255)
+        toc = time.clock()
 
+        time_taken = toc - tic
+        print "Image processing time: " + str(time_taken)
         img_ret, text_ret = self.Basic(the_end_image)
 
         return img_ret, text_ret
@@ -634,13 +679,14 @@ class img_processor():
 
         return output  # Boolean
 
-class CSVLoader():
+class CSVLoader():  # also functions as CSV handler
     """Loads the ASN file from csv format, and stores all the values in an array"""
     def __init__(self, ASNfile):
         self.ASNfile = ASNfile
+        self.ASN_data = []
 
     def Load(self):
-        """Load and return the array"""
+        """Load CSV, split the data based on that they are"""
         asn_data = []
 
         with open(self.ASNfile, "rb") as csvfile:  # load the ASN from csv file, store in array (line by line)
@@ -651,8 +697,131 @@ class CSVLoader():
                 print ', '.join(row)
                 asn_data.append(row)
         csvfile.close()
+        # self.ASN_data = asn_data
+        # ata_arr = np.asarray(asn_data)
 
         return asn_data
+
+class matcher():
+    def __init__(self, ASN_data):
+        self.asn_data = ASN_data
+
+    def itemcodeFinder(self, text_lines, categories):
+        """Find the best match(es) for item code. Return the corresponding candidates
+        Should be based on both text and item code line"
+        Should only run if ASN is loaded. Can later be used to combine results from both images of the box (2 sides) to be more forgiving while remaining robust"""
+
+        asn_data = self.asn_data  # from the creation of the object
+
+        # categories is a dictionary containing the indeces of the lines of interest
+        # text_lines is a list of the lines in the OCR output
+
+        item_code_raw = text_lines[categories['Itemcode']]  # stores only the item code (from OCR)
+
+        min_lev_item = 1000  # initialize to a value that cannot realistically be exceeded
+        itemcode_cand_indeces = []  # for storing indeces!
+
+        # use Levenshtein distance to find the item code(s) in the ASN that match the raw item code best
+        for index in range(0, len(asn_data)):
+            lev_dist = Levenshtein.distance(item_code_raw, asn_data[index][1])  # standard Levenshtein distance
+            if lev_dist < min_lev_item:
+                itemcode_cand_indeces = []  # reset the list to empty, and then collect the candidates
+                itemcode_cand_indeces.append(index)  # store indeces for now
+                min_lev_item = lev_dist
+            elif lev_dist == min_lev_item:
+                itemcode_cand_indeces.append(index)
+            else:
+                pass  # do nothing
+
+        print "Smallest Lev. distance for item code : " + str(min_lev_item)
+
+        # To confirm, could use the text description, and check if it give the same result as Lev dist on item codes
+        min_lev_text = 1000
+        text_cand_indeces = []
+
+        # Again, apply Levenshtein distance
+        text_raw = text_lines[categories['Description']]  # may or may not exist, depending on the outputinterpreter...
+
+        for index in range(0, len(asn_data)):
+            lev_dist = Levenshtein.distance(text_raw, asn_data[index][0])
+            if lev_dist < min_lev_text:
+                text_cand_indeces = []
+                text_cand_indeces.append(index)
+                min_lev_text = lev_dist
+            elif lev_dist == min_lev_text:
+                text_cand_indeces.append(index)
+
+        print "Smallest Lev. distance for text: " + str(min_lev_text)
+        itemcode_cand_values = []
+        # check if the indeces are consistent between the approaches:
+        if itemcode_cand_indeces == text_cand_indeces:
+            for i in itemcode_cand_indeces:
+                itemcode_cand_values.append(asn_data[i][1])
+        # get the itemcode_candidates based on indeces
+
+        return itemcode_cand_values, itemcode_cand_indeces
+
+    def solidorassort(self, line):  # find out if the line is solid or assort code (or at least which is most likely. Assume img processing went well
+        """Important notice: The assort code can also contain double 0, so need to also use length to check
+        Assumes there will be 000 at the end of the solid code!"""
+        line = line
+        line = line.strip('\n')
+        line = line.upper()
+        line = line.replace('O', '0')
+        line = line.replace(' ', '')
+        # convert O's to 0's
+        if '000' or '00' in line:
+            if len(line) > 4:
+                return 'solid'
+            else:
+                return 'assort'
+        else:
+            return 'assort'
+
+    def sigdigs(self, candidate_indeces):  # assumes the solid code has 8 digits
+        asn_data = self.asn_data
+
+        solidcodes = []
+        updated_indeces = []
+        for index in candidate_indeces:
+            if len(asn_data[index][2]) > 4:
+                solidcodes.append(asn_data[index][2])
+                updated_indeces.append(index)
+        # the assort codes would also be included in the above list... need to remove based on len()
+
+        sigdig_list = []
+        for x in range(0, 8):
+            sigdig_list.append(False)  # initialize to zero (false)
+
+        # iterate through each of the 8 positions to find out if they are significant or not
+        # note that normally the last 3 positions should NEVER be significant (all zeros)
+        for i in range(0, 8):  # go through 0 to 7 (8 positions)
+            digits_seen = []
+            for j in range(0, len(solidcodes)):
+                if solidcodes[j][i] not in digits_seen:  # check for any problems caused by difference in datatype
+                    digits_seen.append(solidcodes[j][i])
+            if len(digits_seen) > 1:
+                sigdig_list[i] = True
+
+        return sigdig_list, solidcodes, updated_indeces
+
+    def boxFinder(self, text_lines, categories):  # objective is to uniquely determine which box the image is from, if not sure then return > 1 line
+        """Not: It'd be possible to use the ASN to check whether it's applicable at all to have solid/assort
+        But if the output is too much nonsense then it doesn't really matter..."""
+        asn_data = self.asn_data
+        itemcode_cand_values, itemcode_cand_indeces = self.itemcodeFinder(text_lines=text_lines, categories=categories)
+        # text_lines contains the OCR output. Categories obvious. Have self.asn_data still from the initialization
+        # next step is to: find out if is solid or assort, then identify critical digits
+        if len(asn_data) == 1:  # 1 should be adjusted based on how many nonsense lines are in the ASN
+            pass  # special case, only applicable to when there's only a single line left in the ASN..
+        solid_or_assort = self.solidorassort(text_lines[categories['Solidcode']])  # ret 'solid' or 'assort'
+
+        if solid_or_assort in 'solid':  # for solid case
+            sigdig_list, solidcodes, updated_indeces = self.sigdigs(itemcode_cand_indeces)
+            print sigdig_list
+            # check which digits are significant
+
+        return solidcodes, updated_indeces
 
 class outputInterpreter():
     def __init__(self, OCR_output):
@@ -660,12 +829,14 @@ class outputInterpreter():
         # may or may not need to use string.encode('utf-8')
 
     def subString6Digit(self, input_string):
-        """Check if have at least 6 digits in a row, return true if yes"""
+        """Check if have at least 6 digits in a row, return true if yes
+        Is 6 digits too strict? -- adjusted to 5 for now """
         digits = False
-        for x in range(6, len(input_string)):
-            if input_string[x-6:x].isdigit():
-                digits = True
-                break
+        if len(input_string) >= 6:
+            for x in range(5, len(input_string)):
+                if input_string[x-5:x].isdigit():
+                    digits = True
+                    break
         return digits
 
     def isItemCode(self, text_line):
@@ -675,9 +846,23 @@ class outputInterpreter():
         input_string = text_line.strip('\n')  # get rid of the end-line character
         input_string = input_string.strip(" ")
         input_string = input_string.upper()
-        input_string = input_string.replace("O", "0")
-        input_string = input_string.replace("L", "1")
-        input_string = input_string.translate(None, '-_() ')
+        if "O" in input_string:
+            input_string = input_string.replace("O", "0")
+        if "L" in input_string:
+            input_string = input_string.replace("L", "1")
+        # need to break down into individual checks - is there a more efficient way?
+        if "-" in input_string:
+            input_string = input_string.replace('-', "")
+        if "_" in input_string:
+            input_string = input_string.replace('_', "")
+        if "." in input_string:
+            input_string = input_string.replace('.', "")
+        if "(" in input_string:
+            input_string = input_string.replace('(', "")
+        if ")" or "_" or "(" or ")" in input_string:
+            input_string = input_string.replace(')', "")  # does not go for individual characters
+        if ' ' in input_string:
+            input_string = input_string.replace(' ', "")
 
         if input_string.isdigit():
             return True
@@ -693,7 +878,7 @@ class outputInterpreter():
         input_string = input_string.strip(" ")
         input_string = input_string.upper()
         input_string = input_string.replace("O", "0")
-        input_string = input_string.translate(None, '-_() ')
+        input_string = input_string.replace('-_() ', "")
 
         if "00" in input_string:  # consider adding more cases
             return True
@@ -710,47 +895,62 @@ class outputInterpreter():
 
     def isQuantity(self, input_string):
         """Contains hints like QTY, PCS"""
-        pass
+        input_string = input_string.strip('\n')  # get rid of the end-line character
+        input_string = input_string.strip(" ")
+        input_string = input_string.upper()
+        if "PCS" or "PC" or "CS" or "PIECES" or "PIE" in input_string:
+            return True
+        else:
+            return False
 
     def isCartonNo(self):
         """Has some indicators..."""
         pass
 
-    def isNothing(self):
+    def isNothing(self):  # for empty lines?
         pass
 
     def categorizeLines(self):
         # Want to store the line indexes of each type of line
         categories = {'Itemcode': False, 'Solidcode': False, "Assortcode": False, 'Quantity': False, 'Cartonnumber': False, 'Description': False, 'Nothing': False}
-
+        # only care about 3 kinds of lines: item, solid/assort and item
+        # but can use the position of the other lines to infer the pos of the items of interest
         # split the string around "\n", and store the result in an array
-        text_array = self.OCR_output.split(sep="\n")  # want to use the newline character as separator
-        while not categories['Itemcode']:  # Need to make sure the loop stops once Itemcode becomes a digit
-            # what if there is no line categorized as item code????
-            for i in range(0, len(text_array)): # will be a long string rather than an array of string (separated by newline character)
-                if self.isItemCode(text_array[i]):  # don't need to check after have found the line corresponding to item code (save comp time)
-                    # can use while loop
-                    categories['Itemcode'] = i  # store the index of the item code
-                    break
-                if i == len(categories) and not ['Itemcode']:
-                    print "Unable to find Itemcode, we have a problem m8!"
-                    break
+        text_array = self.OCR_output.split("\n")  # want to use the newline character as separator
+        print "Inspect the text array after split operation: "
+        print text_array
+        found_itemcode = False
+        for i in range(0, len(text_array)):
+            if self.isItemCode(text_array[i]):
+                categories['Itemcode'] = i
+                break
+        if i == (len(text_array)-1) and (not categories['Itemcode']):
+            print "Unable to find Itemcode, we have a problem m8! "
+
         # now only consider lines with index > i (assume no sensible output is above the item code
         # May have error if i == len(text_array), but in this case we're screwed anyways
         for j in range(i+1, len(text_array)-1):  # next LF solid/assort code and try to categorize
             """if j+1 contains "PCS", then most likely line j is our solid/assort code, regardless of the ugliness of line j's text
             solid code is more common than assort code, so first LF solid"""
-            if self.isSolidCode(text_array[j]):
+            if self.isSolidCode(text_array[j]) or self.isQuantity(text_array[j+1]):
                 categories['Solidcode'] = j
                 break
+        # find the line with the most text
+        most_text = 0
+        for k in range(j+1, len(text_array)):
+            line = text_array[k]
+            chars = sum(l.isalpha() for l in line)
+            if chars > most_text:
+                categories['Description'] = k
+
+        # Set "best guess" for the solid/assort code as i+1?
+        # Consider cases where the solid/assort code is completely gone?
+        print text_array
+        print categories
+        return text_array, categories
         # consider maximum allowable number of lines checked: should not have too much noise
         # assume absense of solid code means we have assort code?
         # but: in some cases messy text comes out
-
-
-class matcher():
-    def __init__(self, csv_array):
-        self.csv_array = csv_array
 
 if __name__ == "__main__":
     app = simpleapp_tk(None)  # No parent because first element
