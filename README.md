@@ -2,15 +2,19 @@
 Hugo, Sigurd, Kevinn and Veronica's Final Year Project @ HKUST 2017
 Six Sigma Green Belt project for X Company
 
-## Hybrid.py: 
-> Update 02/06/2017: Approaching perfection. Needs a small dose of dilation, a touch of line rotation and a remedy for boxes covered in excessive amounts of tape. 
-Implementation of the paper mentioned (with a bunch of modifications). Is processing images with complex backgrounds. 
-
 ## GUI.py: 
+> Update 02/12/2017: The binarization technique introduced in Hybrid.py has been updated, the processing time has been dramatically decreased. Work in progress: Matching, extraction of single signiciant digits in solid code for KNN classification.
+
 > Update 02/08/2017: Added hybrid.py to the GUI, and started work on interpreting text outputs from Tesseract.
 
 Simple GUI, making it more convenient to test our program on sample images.
 Uses Tkinter, so it should run on both Mac and Windows.
+
+## Hybrid.py: 
+> Update 02/06/2017: Approaching perfection. Needs a small dose of dilation, a touch of line rotation and a remedy for boxes covered in excessive amounts of tape. 
+Implementation of the paper mentioned (with a bunch of modifications). Is processing images with complex backgrounds. 
+
+
 
 ## knn.py: 
 Based on http://docs.opencv.org/3.0-beta/doc/py_tutorials/py_ml/py_knn/py_knn_understanding/py_knn_understanding.html and http://docs.opencv.org/3.0-beta/doc/py_tutorials/py_ml/py_knn/py_knn_opencv/py_knn_opencv.html.
