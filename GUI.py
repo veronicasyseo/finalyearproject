@@ -118,17 +118,16 @@ class simpleapp_tk(Tkinter.Tk):
             self.DisplayProcessed(img.resize((self.width, self.height), Image.ANTIALIAS))
             self.DisplayOCRText(text)
         elif self.method in "Hybrid":
-            text, img = processor.Hybrid()
-            self.DisplayProcessed(img.resize((self.width, self.height), Image.ANTIALIAS))
+            img, text, boxes = processor.Hybrid()  # and what to do about the iterator?
+            img_pic = Image.fromarray(img)
+            self.DisplayProcessed(img_pic.resize((self.width, self.height), Image.ANTIALIAS))
             self.DisplayOCRText(text)
             interpreter = outputInterpreter(text)
             text, categories = interpreter.categorizeLines()
             # at this point, want to look for candidates, but only if the ASN has already been loaded
-            # could prompt user to load the ASN if not already done at this point
-            # the below will fail if the ASN is not loaded
             # keep it optional for now to load ASN, in order to faciliate testing
             if self.ASN_loaded:
-                itemcode_cands, itemcode_indeces = self.match_instance.boxFinder(text, categories)
+                itemcode_cands, itemcode_indeces = self.match_instance.boxFinder(text, categories, img, boxes)
                 print itemcode_cands
                 self.DisplayCands(itemcode_cands)
             # then process the outputs appropriately, followed by ASN
@@ -174,17 +173,27 @@ class img_processor():
             api.SetVariable("tessedit_char_whitelist", "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0987654321-.:/()")
             api.SetImage(thresholded)
             text_output = api.GetUTF8Text().encode('utf-8')
-            image_processed = api.GetThresholdedImage()
+            # image_processed = api.GetThresholdedImage()
             end_time = time.clock()
             print "Tesseract time: " + str(end_time - load_time)
-            return text_output, image_processed
+            iterator = api.GetIterator()
+            iterator.Begin()
+            level = RIL.TEXTLINE
+            boxes = []
+            for r in iterate_level(iterator, level):
+                boxes.append(r.BoundingBox(level))
+            print boxes
+            # instead of returning the iterator, want to extract slices corresponding to textlines and pass them on.
+            # hopefully, the list will be ordered, for easier use in the following
+            return text_output, boxes
+            # also return images
 
     def Hybrid(self):
         tic = time.clock()
         img = cv2.imread(self.filename)
         load_time = time.clock()
         print "Load time: " + str(load_time - tic)
-        contour_area_min = 700
+        contour_area_min = 600  # 700 to 800 seem to work well
 
         # next split image into the three RGB channels
         img_red = img[:, :, 0]
@@ -228,15 +237,18 @@ class img_processor():
 
         # filter contours based on area (reject small ones, which are definitely noise)
         large_contours = []
+        largest_contour_area = 0
         for contour in zip(abac, hierarchy):
+            if cv2.contourArea(contour[0]) > largest_contour_area:
+                largest_contour_area = cv2.contourArea(contour[0])
             if cv2.contourArea(contour[0]) > contour_area_min:  # contour[1][2] > 0
                 large_contours.append(contour[0])
         print "Number of contours left: " + str(len(large_contours))  # all of these will be processed,so more -> slower
-        # black_bg = np.zeros((img_red.shape[0], img_red.shape[1], 3), dtype='uint8')
-
+        black_bg = np.zeros((img_red.shape[0], img_red.shape[1], 3), dtype='uint8')
+        print "Largest contour area: " + str(largest_contour_area)
         # The following two lines may be commented out, they are just for visualizing the contours
-        # cv2.drawContours(black_bg, large_contours, -1, (0, 255, 0), 3)
-        # Image.fromarray(black_bg).show()
+        cv2.drawContours(black_bg, large_contours, -1, (0, 255, 0), 3)
+        Image.fromarray(black_bg).show()
 
         # use grayscale intensities to filter: m - k*s. m is mean, s is sd (m, s con component-specific. k is parameter)
         grayscale = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)  # m - k*s will work in grayscale
@@ -277,18 +289,18 @@ class img_processor():
                                             cv2.THRESH_BINARY)  # originally THRESH_BINARY_INV
                 mask_accepted = cv2.bitwise_and(thresh, cimg_inside)
             else:
-                k_cp = 0.40
+                k_cp = 0.05  # was OG 0.40. Smaller value appears to introduce more noise
                 threshold_cp = mean_cp - (k_cp * sd_cp)
                 ret, thresh = cv2.threshold(grayscale.copy(), threshold_cp, 255,
                                             cv2.THRESH_BINARY_INV)  # originally THRESH_BINARY
                 mask_accepted = cv2.bitwise_and(thresh, cimg_inside)
                 # debugging: interested in knowing whether this part is triggered at all
-                # print "Triggered: the outline intensity is larger than the inside intensity (in grayscale)"
+                print "Triggered: the outline intensity is larger than the inside intensity (in grayscale)"
 
             bg_for_final -= mask_accepted
 
         bg_for_final = 255 - bg_for_final
-        # Image.fromarray(bg_for_final).show()
+        # Image.fromarray(bg_for_final).show()  # snow problem already existing at this stage
         # cv2.imwrite('outputcool.png', img & cv2.cvtColor(cimg, cv2.COLOR_GRAY2BGR))
 
         # Find the contours (in binary)
@@ -355,12 +367,13 @@ class img_processor():
         # the_end_image.show()
         # cv2.imwrite('outputbinary.png', 255 - the_end_mate.astype('uint8') * 255)
         toc = time.clock()
-
+        img_ret = 255 - the_end_mate.astype('uint8')*255
+        Image.fromarray(img_ret).save("Hybrid.png")
         time_taken = toc - tic
         print "Image processing time: " + str(time_taken)
-        img_ret, text_ret = self.Basic(the_end_image)
+        text_ret, boxes = self.Basic(the_end_image)
 
-        return img_ret, text_ret
+        return img_ret, text_ret, boxes
 
     def Advanced(self):
         """Does contour analysis to find the likely text region(s) of an image,
@@ -598,6 +611,7 @@ class img_processor():
         img_grey = cv2.cvtColor(img_raw, cv2.COLOR_BGR2GRAY)
         img_binary = cv2.threshold(img_grey, 0, 255, cv2.THRESH_OTSU)[1]
         img_for_tess = Image.fromarray(img_binary)
+        img_for_tess.save('otsu.png')
         # Tesseract part
         with PyTessBaseAPI(psm=6) as api:
             api.SetImage(img_for_tess)
@@ -805,7 +819,7 @@ class matcher():
 
         return sigdig_list, solidcodes, updated_indeces
 
-    def boxFinder(self, text_lines, categories):  # objective is to uniquely determine which box the image is from, if not sure then return > 1 line
+    def boxFinder(self, text_lines, categories, img, boxes):  # objective is to uniquely determine which box the image is from, if not sure then return > 1 line
         """Not: It'd be possible to use the ASN to check whether it's applicable at all to have solid/assort
         But if the output is too much nonsense then it doesn't really matter..."""
         asn_data = self.asn_data
@@ -819,9 +833,44 @@ class matcher():
         if solid_or_assort in 'solid':  # for solid case
             sigdig_list, solidcodes, updated_indeces = self.sigdigs(itemcode_cand_indeces)
             print sigdig_list
+            extractor = charextractor(img, boxes)
+            extract_res = extractor.extractSolid(categories['Solidcode'], sigdig_list)
+            Image.fromarray(extract_res).show()  # is it array or image format?
+            Image.fromarray(extract_res).save("solidslice.png")
+            print "Done - for now "
             # check which digits are significant
 
         return solidcodes, updated_indeces
+
+class charextractor():
+    def __init__(self, img, boxes):
+        self.img = img  # will be binary
+        self.boxes = boxes
+
+    def extractSolid(self, index_solid, sigdig_arr):  # after knowing which digits are significant figures. Need to pass on what we know about the line's pos and which figs are sigs
+        """Extract only the bounding rectangle of the line corresponding to solid code, all other pixels are discarded
+        Use either cv2.canny or cv2.findContours() then deal with each cont. individually.
+        Ideally, want to skip the irrelevant conts. First: extract the entire solid code region. """
+        index_solid = index_solid
+        sigdig_arr = sigdig_arr
+        img = self.img
+        boxes = self.boxes
+
+        edge_adjustment = 10  # pixels  # introduces issues of out of bound of arrays in rare cases
+
+        coordinates = boxes[index_solid]
+        x_top_left = max(coordinates[0] - edge_adjustment, 0)
+        y_top_left = max(coordinates[1] - edge_adjustment, 0)
+        x_bottom_right = min(coordinates[2] + edge_adjustment, img.shape[0])
+        y_bottom_right = min(coordinates[3] + edge_adjustment, img.shape[1])
+        # at this point, img is a 'JpegImageFile'
+        # should extract more than just the bounding rectangle
+        solidcode_img = img[y_top_left:y_bottom_right, x_top_left: x_bottom_right]
+
+        return solidcode_img
+
+    def extractAssort(self):
+        pass
 
 class outputInterpreter():
     def __init__(self, OCR_output):
