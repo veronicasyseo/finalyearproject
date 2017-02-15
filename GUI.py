@@ -167,7 +167,7 @@ class img_processor():
             image_processed = api.GetThresholdedImage()
             return text_output, image_processed
 
-    def Basic(self, thresholded):
+    def Basic(self, thresholded, img_array):  # for the purpose of debugging, will also draw the bounding rectangles for where tesseract thinks there are characters
         load_time = time.clock()
         with PyTessBaseAPI(psm=6) as api:
             api.SetVariable("tessedit_char_whitelist", "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0987654321-.:/()")
@@ -183,6 +183,22 @@ class img_processor():
             for r in iterate_level(iterator, level):
                 boxes.append(r.BoundingBox(level))
             print boxes
+            img_from_tess = img_array
+            iterator = api.GetIterator()
+            iterator.Begin()
+            level = RIL.SYMBOL
+            for r in iterate_level(iterator, level):
+                # print r.BoundingBox(level)
+                x = r.BoundingBox(level)[0]
+                y = r.BoundingBox(level)[1]
+                x_2 = r.BoundingBox(level)[2]
+                y_2 = r.BoundingBox(level)[3]
+
+                img_from_tess = cv2.rectangle(img_from_tess, (x, y), (x_2, y_2), 255,
+                                    3)  # Draw a rectangle around each character found by OCR
+            boxed = Image.fromarray(img_from_tess)
+            boxed.show()
+            boxed.save('boxed.png')
             # instead of returning the iterator, want to extract slices corresponding to textlines and pass them on.
             # hopefully, the list will be ordered, for easier use in the following
             return text_output, boxes
@@ -193,7 +209,7 @@ class img_processor():
         img = cv2.imread(self.filename)
         load_time = time.clock()
         print "Load time: " + str(load_time - tic)
-        contour_area_min = 600  # 700 to 800 seem to work well
+        contour_area_min = 50  # 700 to 800 seem to work well
 
         # next split image into the three RGB channels
         img_red = img[:, :, 0]
@@ -289,13 +305,13 @@ class img_processor():
                                             cv2.THRESH_BINARY)  # originally THRESH_BINARY_INV
                 mask_accepted = cv2.bitwise_and(thresh, cimg_inside)
             else:
-                k_cp = 0.05  # was OG 0.40. Smaller value appears to introduce more noise
+                k_cp = 0.40  # was OG 0.40. Smaller value appears to introduce more noise
                 threshold_cp = mean_cp - (k_cp * sd_cp)
                 ret, thresh = cv2.threshold(grayscale.copy(), threshold_cp, 255,
                                             cv2.THRESH_BINARY_INV)  # originally THRESH_BINARY
                 mask_accepted = cv2.bitwise_and(thresh, cimg_inside)
                 # debugging: interested in knowing whether this part is triggered at all
-                print "Triggered: the outline intensity is larger than the inside intensity (in grayscale)"
+                # print "Triggered: the outline intensity is larger than the inside intensity (in grayscale)"
 
             bg_for_final -= mask_accepted
 
@@ -364,14 +380,42 @@ class img_processor():
         # Image.fromarray(thresh).show()  # is entire image, want overlapping parts only
         the_end_mate = np.logical_and(255 - thresh, keep_going)  # combine the results from global and local thresholds
         the_end_image = Image.fromarray(the_end_mate.astype('uint8') * 255)
+        did_not_think_so = the_end_mate.astype('uint8')*255
         # the_end_image.show()
         # cv2.imwrite('outputbinary.png', 255 - the_end_mate.astype('uint8') * 255)
+        # Added steps: To resolve the "cloud" issues:
+        nonzero_count = np.count_nonzero(did_not_think_so)
+        nonzero_threshold = 0.30  # not appropriate threshold
+        img_size = img_red.shape[0] * img_red.shape[1]
+
+        """if (1.0*nonzero_count/img_size) < nonzero_threshold:  # could also try gaussian blur? This is not appropriate for detecting problems
+            print "Too many black pixels, need to do reprocessing!"
+            # try dilation, both horizontal and vertical instead of contour analysis
+            strel1 = np.zeros((8, 8))
+            for i in range(0, 8):
+                strel1[2][i] = 1
+            # horizontal dilation
+            edge_dim_1 = ndi.binary_dilation(did_not_think_so, structure=strel1)
+
+            strel2 = np.zeros((8, 8))
+
+            for j in range(0, 8):
+                strel2[j][2] = 1
+            # vertical dilation
+            edge_dim_2 = ndi.binary_dilation(did_not_think_so, structure=strel2)
+            # combine the results with OR operator
+            edges_dil_comb = np.logical_or(edge_dim_1, edge_dim_2)
+            # all_labels = measure.label(edges_dil_comb, neighbors=8, connectivity=2).astype('uint8')  # same dimensions as image
+            did_not_think_so = edges_dil_comb.astype('uint8')*255"""
+
+        Image.fromarray(did_not_think_so).show()
         toc = time.clock()
         img_ret = 255 - the_end_mate.astype('uint8')*255
         Image.fromarray(img_ret).save("Hybrid.png")
         time_taken = toc - tic
         print "Image processing time: " + str(time_taken)
-        text_ret, boxes = self.Basic(the_end_image)
+
+        text_ret, boxes = self.Basic(the_end_image, did_not_think_so)
 
         return img_ret, text_ret, boxes
 
