@@ -12,6 +12,7 @@ import cv2
 import numpy as np
 from PIL import ImageTk, Image
 from scipy import ndimage as ndi
+from skimage import feature
 
 
 class simpleapp_tk(Tkinter.Tk):
@@ -209,7 +210,7 @@ class img_processor():
         img = cv2.imread(self.filename)
         load_time = time.clock()
         print "Load time: " + str(load_time - tic)
-        contour_area_min = 50  # 700 to 800 seem to work well
+        contour_area_min = 400  # 700 to 800 seem to work well
 
         # next split image into the three RGB channels
         img_red = img[:, :, 0]
@@ -264,7 +265,7 @@ class img_processor():
         print "Largest contour area: " + str(largest_contour_area)
         # The following two lines may be commented out, they are just for visualizing the contours
         cv2.drawContours(black_bg, large_contours, -1, (0, 255, 0), 3)
-        Image.fromarray(black_bg).show()
+        # Image.fromarray(black_bg).show()
 
         # use grayscale intensities to filter: m - k*s. m is mean, s is sd (m, s con component-specific. k is parameter)
         grayscale = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)  # m - k*s will work in grayscale
@@ -379,40 +380,135 @@ class img_processor():
                                     cv2.THRESH_BINARY)  # this is a global threshold with carefully derived threshold
         # Image.fromarray(thresh).show()  # is entire image, want overlapping parts only
         the_end_mate = np.logical_and(255 - thresh, keep_going)  # combine the results from global and local thresholds
+
+        print "Shape of didn't think so"
         the_end_image = Image.fromarray(the_end_mate.astype('uint8') * 255)
-        did_not_think_so = the_end_mate.astype('uint8')*255
+        did_not_think_so = 255 - the_end_mate.astype('uint8')*255
+        print did_not_think_so.shape
+        Image.fromarray(did_not_think_so).show  # why is this not displayed?
         # the_end_image.show()
         # cv2.imwrite('outputbinary.png', 255 - the_end_mate.astype('uint8') * 255)
         # Added steps: To resolve the "cloud" issues:
         nonzero_count = np.count_nonzero(did_not_think_so)
-        nonzero_threshold = 0.30  # not appropriate threshold
+        nonzero_threshold = 0.90  # not appropriate threshold
         img_size = img_red.shape[0] * img_red.shape[1]
 
-        """if (1.0*nonzero_count/img_size) < nonzero_threshold:  # could also try gaussian blur? This is not appropriate for detecting problems
+        if (1.0*nonzero_count/img_size) < nonzero_threshold:  # could also try gaussian blur? This is not appropriate for detecting problems
             print "Too many black pixels, need to do reprocessing!"
-            # try dilation, both horizontal and vertical instead of contour analysis
-            strel1 = np.zeros((8, 8))
-            for i in range(0, 8):
+            print "Nonzero pixels: " + str(nonzero_count)
+            print "Image size: " + str(img_size)
+
+            can_red = feature.canny(img_red, sigma=3)  # alternatively, add lower and upper thresholds of 50/100 TBC
+            can_green = feature.canny(img_green, sigma=3)
+            can_blue = feature.canny(img_blue, sigma=3)
+
+            # use logical OR operator to combine the results of canny
+            combined_canny = np.logical_or(can_red, np.logical_or(can_green, can_blue)).astype('uint8')*255  # should be boolean
+
+            # dilation turns out to be useful
+            strel1 = np.zeros((5, 5))
+            for i in range(0, 5):
                 strel1[2][i] = 1
             # horizontal dilation
-            edge_dim_1 = ndi.binary_dilation(did_not_think_so, structure=strel1)
+            edge_dim_1 = ndi.binary_dilation(combined_canny, structure=strel1)
 
-            strel2 = np.zeros((8, 8))
+            strel2 = np.zeros((5, 5))
 
-            for j in range(0, 8):
+            for j in range(0, 5):
                 strel2[j][2] = 1
             # vertical dilation
-            edge_dim_2 = ndi.binary_dilation(did_not_think_so, structure=strel2)
+            edge_dim_2 = ndi.binary_dilation(combined_canny, structure=strel2)
             # combine the results with OR operator
             edges_dil_comb = np.logical_or(edge_dim_1, edge_dim_2)
             # all_labels = measure.label(edges_dil_comb, neighbors=8, connectivity=2).astype('uint8')  # same dimensions as image
-            did_not_think_so = edges_dil_comb.astype('uint8')*255"""
+            all_labels = edges_dil_comb.astype('uint8')
+            # Image.fromarray(all_labels*255).show()
 
-        Image.fromarray(did_not_think_so).show()
-        toc = time.clock()
+            # contour analysis -- only needed in order to find the positions of the structures
+            im2_spec, contours_spec, hierarchy_spec = cv2.findContours(all_labels*255, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
+
+            large_contours_spec = []
+            for cont in contours_spec:
+                if cv2.contourArea(cont) > contour_area_min:  # never passed, likely due to the area function failing
+                    large_contours_spec.append(cont)
+
+            # next, deal with each contour individually
+            black_bg_spec = np.zeros((img_red.shape[0], img_red.shape[1]), dtype='uint8')
+            black_bg_spec += 255
+            print "Before area req: " + str(len(contours_spec))
+            print "After: " + str(len(large_contours_spec))
+
+            for x in range(0, len(large_contours_spec)):
+                # start with outline
+                outline_spec = np.zeros((img_red.shape[0], img_red.shape[1]), dtype='uint8')
+                cv2.drawContours(outline_spec, large_contours_spec, x, color=255, thickness=1)
+                pts_outline_spec = np.where(outline_spec == 255)
+                gs_outline_spec = grayscale[pts_outline_spec[0], pts_outline_spec[1]]  # collect the gs values of the outline of the current contour
+                intensity_fg_spec = np.mean(gs_outline_spec)
+
+                # next do the interior points
+                interior_spec = np.zeros((img_red.shape[0], img_red.shape[1]), dtype='uint8')
+                cv2.drawContours(interior_spec, large_contours_spec, x, color=255, thickness=-1)
+                pts_interior_spec = np.where(interior_spec == 255)
+                gs_interior_spec = grayscale[pts_interior_spec[0], pts_interior_spec[1]]
+                intensity_bg_spec, sd_spec = cv2.meanStdDev(gs_interior_spec)
+
+                if intensity_fg_spec < intensity_bg_spec:
+                    k_cp_spec = 0.05
+                    threshold = intensity_bg_spec - (k_cp_spec * sd_spec)
+                    # perform binary thresholding
+                    ret, thresh_spec = cv2.threshold(grayscale.copy(), threshold, 255, cv2.THRESH_BINARY)
+                    # use the result to create a mask
+                    mask_accepted_spec = cv2.bitwise_and(thresh_spec, interior_spec)
+                else:
+                    k_cp_spec = 0.40
+                    threshold = intensity_bg_spec - (k_cp_spec * sd_spec)
+                    # perform binary thresholding
+                    ret, thresh_spec = cv2.threshold(grayscale.copy(), threshold, 255, cv2.THRESH_BINARY_INV)
+                    # mask w/ res
+                    mask_accepted_spec = cv2.bitwise_and(thresh_spec, interior_spec)
+                    # debugging: interested in knowing whether this part is triggered at all
+                    # print "Triggered: the outline intensity is larger than the inside intensity (in grayscale)"
+
+                black_bg_spec -= mask_accepted_spec
+            bg_for_final_spec = 255 - black_bg_spec
+            Image.fromarray(bg_for_final_spec).show()
+
+            # contour analysis again, to be followed by global thresholding on the grayscale image
+            im2_k, contours_k, hierarchy_k = cv2.findContours(bg_for_final_spec, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE)  # the hierarchy does not matter
+
+            big_contours_k = []
+
+            for cnt_k in contours_k: # simple area thresholding again to remove the noise
+                if cv2.contourArea(cnt_k) > contour_area_min:
+                    big_contours_k.append(cnt_k)
+
+            black_bg_k = np.zeros((img_red.shape[0], img_red.shape[1]), dtype='uint8')
+            cv2.drawContours(black_bg_k, big_contours_k, -1, color=255, thickness=-1)
+
+            combine_spec_k = np.logical_and(black_bg_k, bg_for_final_spec)
+            combine_unsigned = combine_spec_k.astype('uint8')*255
+            regions_in_both = np.where(combine_unsigned == 255)
+            mean_k, sd_k = cv2.meanStdDev(grayscale[regions_in_both[0], regions_in_both[1]])
+            threshold_k = mean_k + (2.0*sd_k)  # much larger threshold than in the OG part
+
+            ret, thresholded_k = cv2.threshold(grayscale.copy(), threshold_k, 255, cv2.THRESH_BINARY)
+            the_end_mate = np.logical_and(255-thresholded_k, combine_unsigned)
+            # the_end_mate = back_to_main.astype('uint8')*255
+            # Image.fromarray(the_end_mate).show()
+
+            print "As far as have been implemented! "
+            # need to merge results with the
+        # Image.fromarray(did_not_think_so).show()
         img_ret = 255 - the_end_mate.astype('uint8')*255
         Image.fromarray(img_ret).save("Hybrid.png")
+
+        the_end_image = Image.fromarray(the_end_mate.astype('uint8') * 255)
+        did_not_think_so = 255 - the_end_mate.astype('uint8')*255
+
+        toc = time.clock()
         time_taken = toc - tic
+
         print "Image processing time: " + str(time_taken)
 
         text_ret, boxes = self.Basic(the_end_image, did_not_think_so)
@@ -622,7 +718,7 @@ class img_processor():
         blur = cv2.GaussianBlur(image_grayscale, (21, 21), 0)
         img_binary = cv2.threshold(blur, 0, 255, cv2.THRESH_OTSU)[1]
         img_for_tess = Image.fromarray(img_binary)
-        img_for_tess.show()
+        # img_for_tess.show()
 
         # Tesseract part
         with PyTessBaseAPI(psm=6) as api:
