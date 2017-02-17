@@ -3,6 +3,8 @@ Hugo, Sigurd, Kevinn and Veronica's Final Year Project @ HKUST 2017
 Six Sigma Green Belt project for X Company
 
 ## GUI.py: 
+> Update 02/17/2017: Added adaptive thresholding, you can select it from the drop-down menu in the GUI.
+
 > Update 02/16/2017: Added reprocessing for "snowy" outputs for the Hybrid method, which dramatically improves the outputs for boxes with rough background. 
 
 > Update 02/12/2017: The binarization technique introduced in Hybrid.py has been updated, the processing time has been dramatically decreased. Work in progress: Matching, extraction of single signiciant digits in solid code for KNN classification.
