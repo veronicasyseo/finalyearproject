@@ -13,6 +13,7 @@ import numpy as np
 from PIL import ImageTk, Image
 from scipy import ndimage as ndi
 from skimage import feature
+from skimage.filters import threshold_adaptive
 
 
 class simpleapp_tk(Tkinter.Tk):
@@ -67,7 +68,7 @@ class simpleapp_tk(Tkinter.Tk):
         self.label4.grid(column=0, row=2)
 
         # dropdown menu for selecting image processing procedure
-        optionList = ["Hybrid", "Advanced", "Basic", "ContourGaussianKernelOtsu", "GaussianKernelAndOtsu", "Otsu"]  # add more later
+        optionList = ["Hybrid", "Adaptive Thresholding", "Advanced", "Basic", "ContourGaussianKernelOtsu", "GaussianKernelAndOtsu", "Otsu"]  # add more later
         self.dropVar = Tkinter.StringVar()
         self.dropVar.set("Hybrid")  # default
         self.dropMenu1 = Tkinter.OptionMenu(self, self.dropVar, *optionList, command=self.func)
@@ -132,6 +133,18 @@ class simpleapp_tk(Tkinter.Tk):
                 print itemcode_cands
                 self.DisplayCands(itemcode_cands)
             # then process the outputs appropriately, followed by ASN
+        elif self.method in "Adaptive Thresholding":
+            text, boxes, img = processor.AdaptiveThresholding()
+            img_pic = Image.fromarray(img)
+            self.DisplayProcessed(img_pic.resize((self.width, self.height), Image.ANTIALIAS))
+            self.DisplayOCRText(text)
+            interpreter = outputInterpreter(text)
+            text, categories = interpreter.categorizeLines()
+
+            if self.ASN_loaded:
+                itemcode_cands, itemcode_indeces = self.match_instance.boxFinder(text, categories, img, boxes)
+                print itemcode_cands
+                self.DisplayCands(itemcode_cands)
         else:
             print "Method selection error!"
 
@@ -514,6 +527,39 @@ class img_processor():
         text_ret, boxes = self.Basic(the_end_image, did_not_think_so)
 
         return img_ret, text_ret, boxes
+
+    def AdaptiveThresholding(self):
+        img_read = cv2.imread(self.filename)
+        area_lower_bound = 200  # originally 300
+
+        grayscale = cv2.cvtColor(img_read,
+                                 cv2.COLOR_BGR2GRAY)  # potential improvement: using multiple color channels and combining results
+
+        block_size = 121
+        binar_adaptive = threshold_adaptive(grayscale, block_size, offset=24)
+
+        # next, do noise removal
+        noisy = binar_adaptive.astype('uint8') * 255
+
+        im2, contours, hierarchy = cv2.findContours(noisy, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
+
+        large_contours = []
+
+        for cnt in contours:
+            if cv2.contourArea(cnt) > area_lower_bound:
+                large_contours.append(cnt)
+
+        black_bg = np.zeros((img_read.shape[0], img_read.shape[1]), dtype='uint8')
+        cv2.drawContours(black_bg, large_contours, -1, color=255, thickness=-1)
+        Image.fromarray(black_bg).show()  # black text on white background
+        combined = np.logical_and(255 - black_bg, 255 - noisy)  # why are some tiny pixels left here?
+        combined = combined.astype('uint8')*255
+
+        img_for_tess = Image.fromarray(combined)
+
+        text_output, boxes = self.Basic(img_for_tess, combined)
+
+        return text_output, boxes, (255-combined)
 
     def Advanced(self):
         """Does contour analysis to find the likely text region(s) of an image,
