@@ -12,6 +12,9 @@ Six Sigma Green Belt project for X Company
 Simple GUI, making it more convenient to test our program on sample images.
 Uses Tkinter, so it should run on both Mac and Windows.
 
+## Adaptive_thresholding.py: 
+A less computationally expensive approach than hybrid.py. Apart from using skimage's adaptive thresholding method, contour analysis is used to filter out any noise left after thresholding.
+
 ## Hybrid.py: 
 > Update 02/06/2017: Approaching perfection. Needs a small dose of dilation, a touch of line rotation and a remedy for boxes covered in excessive amounts of tape. 
 Implementation of the paper mentioned (with a bunch of modifications). Is processing images with complex backgrounds. 
