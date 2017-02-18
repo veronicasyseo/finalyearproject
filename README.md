@@ -2,6 +2,7 @@
 Hugo, Sigurd, Kevinn and Veronica's Final Year Project @ HKUST 2017
 Six Sigma Green Belt project for X Company
 
+
 ## GUI.py: 
 > Update 02/17/2017: Added adaptive thresholding, you can select it from the drop-down menu in the GUI.
 
@@ -14,8 +15,14 @@ Six Sigma Green Belt project for X Company
 Simple GUI, making it more convenient to test our program on sample images.
 Uses Tkinter, so it should run on both Mac and Windows.
 
+
 ## Adaptive_thresholding.py: 
 A less computationally expensive approach than hybrid.py. Apart from using skimage's adaptive thresholding method, contour analysis is used to filter out any noise left after thresholding.
+
+
+## CategorizeLines.py: 
+Uses OCR output as input. Returns the indeces for the useful lines. Does not rely on ASN, but is specific to one particular upstream company.
+
 
 ## Hybrid.py: 
 > Update 02/06/2017: Approaching perfection. Needs a small dose of dilation, a touch of line rotation and a remedy for boxes covered in excessive amounts of tape. 
