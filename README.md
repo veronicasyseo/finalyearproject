@@ -24,7 +24,7 @@ A less computationally expensive approach than hybrid.py. Apart from using skima
 Uses OCR output as input. Returns the indeces for the useful lines. Does not rely on ASN, but is specific to one particular upstream company.
 
 
-## Hybrid.py: 
+## Hybrid.py: [Currently outdated, improvements will be uploaded soon]
 > Update 02/06/2017: Approaching perfection. Needs a small dose of dilation, a touch of line rotation and a remedy for boxes covered in excessive amounts of tape. 
 Implementation of the paper mentioned (with a bunch of modifications). Is processing images with complex backgrounds. 
 
