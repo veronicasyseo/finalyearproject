@@ -4,6 +4,8 @@ Six Sigma Green Belt project for X Company
 
 
 ## GUI.py: 
+> Update 02/21/2017: Added implementation of Wagner-Fischer algorithm, which is used for string processing. Improved the hybrid method (binarization). Improved the logic for categorizing lines.
+
 > Update 02/17/2017: Added adaptive thresholding, you can select it from the drop-down menu in the GUI.
 
 > Update 02/16/2017: Added reprocessing for "snowy" outputs for the Hybrid method, which dramatically improves the outputs for boxes with rough background. 
