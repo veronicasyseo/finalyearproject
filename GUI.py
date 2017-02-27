@@ -1394,7 +1394,7 @@ class matcher():
 
         return solidcodes, updated_indeces
 
-    def checker(self, text_lines, ind_dictionary):  # to-do: check for internal consistencies when assigning indeces to categories
+    def checkerOutdated(self, text_lines, ind_dictionary):  # to-do: check for internal consistencies when assigning indeces to categories
         # testing sequence: Itemcode, Solid/assort code, Text description.
         # intialize the lists for result collection:
         asn = self.asn
@@ -1486,6 +1486,122 @@ class matcher():
         print result_list_dict
         # To-Do: avoid inconsistencies and duplicates
         self.itemcodeFinder(text_lines, final_ind_dict)
+        return final_ind_dict, text_lines
+
+    def checker(self, text_lines, ind_dictionary):
+        # testing sequence: Itemcode, Solid/assort code, Text description.
+        # intialize the lists for result collection:
+        asn = self.asn
+        result_list = []
+        for k in range(0, len(text_lines)):
+            result_list.append([False, False, False])
+
+        """sub_penalties = np.ones((128, 128), dtype=np.float64)
+        ins_penalties = np.ones((128, 128), dtype=np.float64)*5
+        del_penalties = np.ones((128, 128), dtype=np.float64)*3
+        sub_hacks = np.zeros((128, 128), dtype=np.float64)"""
+
+        # test the lines against ASN, not concerned about the values of the best matches yet, just want to confirm line types
+        for index in range(0, len(text_lines)):  # do a loophole to find the substitution-based score..may lead to negative values???
+            cur_min_ic = 1000
+            cur_min_sa = 1000
+            cur_min_td = 1000
+            for element_no in range(0, len(asn)):
+                # dist_ic = WagnerFischer(text_lines[index], asn[element_no][1]).cost
+                dist_ic = 1.0*Levenshtein.distance(text_lines[index], asn[element_no][1])/len(asn[element_no][1])
+                checking_sa = text_lines[index].replace("-", "")
+                # dist_sa = WagnerFischer(checking_sa, asn[element_no][2]).cost
+                dist_sa = 1.0*Levenshtein.distance(checking_sa, asn[element_no][2])/len(asn[element_no][2])
+                # dist_td = WagnerFischer(text_lines[index], asn[element_no][0]).cost
+                dist_td = 1.0*Levenshtein.distance(text_lines[index], asn[element_no][0])/len(asn[element_no][0])
+                if dist_ic < cur_min_ic:
+                    result_list[index][0] = dist_ic
+                    cur_min_ic = dist_ic
+                if dist_sa < cur_min_sa:
+                    result_list[index][1] = dist_sa
+                    cur_min_sa = dist_sa
+                if dist_td < cur_min_td:
+                    cur_min_td = dist_td
+                    result_list[index][2] = dist_td
+
+        print result_list
+
+        # process result_list to make a dictionary the indeces of useful lines
+        result_list_dict = {'Itemcode': False, 'Solidcode': False, 'Text description': False}
+
+        min_dist_ic = 1000
+        min_dist_sa = 1000
+        min_dist_td = 1000
+
+        index_ic = False
+        index_sa = False
+        index_td = False
+
+        for x in range(0, len(result_list)):  # if tied, go by index heuristics
+
+            if result_list[x][0] < min_dist_ic:
+                min_dist_ic = result_list[x][0]
+                index_ic = x
+            if result_list[x][1] < min_dist_sa:
+                min_dist_sa = result_list[x][1]
+                index_sa = x
+            if result_list[x][2] < min_dist_td:
+                min_dist_td = result_list[x][2]
+                index_td = x
+
+        if index_ic == index_td:
+            index_td = False
+
+        if index_ic == index_sa:
+            index_sa = False
+
+        result_list_dict['Itemcode'] = index_ic
+        result_list_dict['Solidcode'] = index_sa
+        result_list_dict['Text description'] = index_td
+
+        # compare the results to the conclusions reached by the outputInterpreter(). Compare result_list and ind_dictionary
+        ind_dictionary = ind_dictionary
+        final_ind_dict = {'Itemcode': False, 'Solidcode': False, 'Text description': False}
+
+        if type(ind_dictionary['Itemcode']) is bool and type(result_list_dict['Itemcode']) is bool:
+            final_ind_dict['Itemcode'] = False
+        elif type(ind_dictionary['Itemcode']) is bool and type(result_list_dict['Itemcode']) is not bool:
+            final_ind_dict['Itemcode'] = result_list_dict['Itemcode']
+        elif type(ind_dictionary['Itemcode']) is not bool and type(result_list_dict['Itemcode']) is bool:
+            final_ind_dict['Itemcode'] = ind_dictionary['Itemcode']
+        else:
+            final_ind_dict['Itemcode'] = min(ind_dictionary['Itemcode'], result_list_dict['Itemcode'])
+
+        if type(ind_dictionary['Solidcode']) is bool and type(result_list_dict['Solidcode']) is bool:
+            final_ind_dict['Solidcode'] = False
+        elif type(ind_dictionary['Solidcode']) is bool and type(result_list_dict['Solidcode']) is not bool:
+            final_ind_dict['Solidcode'] = result_list_dict['Solidcode']
+        elif type(ind_dictionary['Solidcode']) is not bool and type(result_list_dict['Solidcode']) is bool:
+            final_ind_dict['Solidcode'] = ind_dictionary['Solidcode']
+        else:
+            final_ind_dict['Solidcode'] = min(ind_dictionary['Solidcode'], result_list_dict['Solidcode'])
+
+        if type(ind_dictionary['Text description']) is bool and type(result_list_dict['Text description']) is bool:
+            final_ind_dict['Text description'] = False
+        elif type(ind_dictionary['Text description']) is bool and type(result_list_dict['Text description']) is not bool:
+            final_ind_dict['Text description'] = result_list_dict['Text description']
+        elif type(ind_dictionary['Text description']) is not bool and type(result_list_dict['Text description']) is bool:
+            final_ind_dict['Text description'] = ind_dictionary['Text description']
+        else:
+            final_ind_dict['Text description'] = min(ind_dictionary['Text description'], result_list_dict['Text description'])
+
+        print ind_dictionary
+        print result_list_dict
+        print final_ind_dict
+
+        if type(ind_dictionary['Text description']) is bool:
+            final_ind_dict['Text description'] = False
+
+        print final_ind_dict
+
+        print self.itemcodeFinder(text_lines, final_ind_dict)  # forward this later!
+        print "Remember to forward this output to the next step ! "
+
         return final_ind_dict, text_lines
 
 
