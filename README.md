@@ -3,7 +3,8 @@ Hugo, Sigurd, Kevinn and Veronica's Final Year Project @ HKUST 2017
 Six Sigma Green Belt project for X Company
 
 
-## GUI.py: 
+## GUI.py:
+> Update 03/03/2017: Further improvements to matching logic. Can now correctly identify the item code in ≈ 98% of samples, as long as there is an ASN. 
 > Update 02/21/2017: Added implementation of Wagner-Fischer algorithm, which is used for string processing. Improved the hybrid method (binarization). Improved the logic for categorizing lines.
 
 > Update 02/17/2017: Added adaptive thresholding, you can select it from the drop-down menu in the GUI.
