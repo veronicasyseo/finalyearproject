@@ -5,7 +5,7 @@ import Tkinter
 import csv
 import time
 from tesserocr import PyTessBaseAPI, RIL, iterate_level
-from tkFileDialog import askopenfilename
+from tkFileDialog import askopenfilename, askdirectory
 
 import Levenshtein  # may or may not be used
 import cv2
@@ -17,6 +17,7 @@ from skimage.filters import threshold_adaptive
 import re
 import collections
 import pprint
+import os
 
 
 class simpleapp_tk(Tkinter.Tk):
@@ -71,7 +72,7 @@ class simpleapp_tk(Tkinter.Tk):
         self.label4.grid(column=0, row=2)
 
         # dropdown menu for selecting image processing procedure
-        optionList = ["Hybrid", "Adaptive Thresholding", "Advanced", "Basic", "ContourGaussianKernelOtsu", "GaussianKernelAndOtsu", "Otsu"]  # add more later
+        optionList = ["Hybrid", "Adaptive Thresholding", "AccItemCTest", "Advanced", "Basic", "ContourGaussianKernelOtsu", "GaussianKernelAndOtsu", "Otsu"]  # add more later
         self.dropVar = Tkinter.StringVar()
         self.dropVar.set("Hybrid")  # default
         self.dropMenu1 = Tkinter.OptionMenu(self, self.dropVar, *optionList, command=self.func)
@@ -132,7 +133,7 @@ class simpleapp_tk(Tkinter.Tk):
             # at this point, want to look for candidates, but only if the ASN has already been loaded
             # keep it optional for now to load ASN, in order to faciliate testing
             if self.ASN_loaded:
-                categories, text = self.match_instance.checker(text, categories)
+                categories, text, itemcode_indeces, unique_ic = self.match_instance.checker(text, categories)
 
                 # itemcode_cands, itemcode_indeces = self.match_instance.boxFinder(text, categories, img, boxes)
                 # print itemcode_cands
@@ -165,11 +166,13 @@ class simpleapp_tk(Tkinter.Tk):
             text, categories = interpreter.categorizeLines(text)
 
             if self.ASN_loaded:
-                categories, text = self.match_instance.checker(text, categories)
+                categories, text, itemcode_indeces, unique_ic = self.match_instance.checker(text, categories)
 
                 # itemcode_cands, itemcode_indeces = self.match_instance.boxFinder(text, categories, img, boxes)
                 # print itemcode_cands
                 # self.DisplayCands(itemcode_cands)
+            print "Itemcode indeces: "
+            print itemcode_indeces
 
             index_solid = categories['Solidcode']
 
@@ -188,6 +191,50 @@ class simpleapp_tk(Tkinter.Tk):
             solidcode_arr = img[y_top_left:y_bottom_right, x_top_left:x_bottom_right, :]
 
             Image.fromarray(solidcode_arr).save('solidslice.png')
+
+        elif self.method in "AccItemCTest":  # for now, use AdaptiveThresholding for Image processing
+            if self.ASN_loaded:
+                directory = askdirectory()
+
+                count_attempts = 0
+                count_correct = 0
+                count_correct_not_unique = 0
+                errors = []
+                not_unique_but_correct = []
+
+                for filename in os.listdir(directory):
+                    if filename.endswith(".JPG"):
+                        count_attempts += 1
+                        # img_read = cv2.imread(os.path.join(directory,filename))
+                        processor = img_processor(os.path.join(directory, filename))
+                        text, boxes, img = processor.AdaptiveThresholding()
+                        interpreter = outputInterpreter()
+                        text, categories = interpreter.categorizeLines(text)
+                        categories, text, itemcode_indeces, unique_ic = self.match_instance.checker(text, categories)  # need to add accuracy check
+                        correct_index = self.match_instance.correctFinder(filename)
+                        # print itemcode_indeces
+                        # print "Correct index: " + str(correct_index)
+                        if (correct_index in itemcode_indeces) and unique_ic:
+                            count_correct += 1
+                        elif (correct_index in itemcode_indeces) and not unique_ic:
+                            count_correct_not_unique += 1
+                            not_unique_but_correct.append(filename)
+                        else:
+                            errors.append(filename)
+                        print "Categories: "
+                        print categories
+                        print "Text: "
+                        print text
+                    print "Images processed: " + str(count_attempts)
+                    print "Correctly determined the itemcode: " + str(count_correct)
+                print "Line level accuracy solid code: " + str(100.0 * count_correct / count_attempts)
+                print "Overall, the number of ICs that were not uniquely determined was: " + str(count_correct_not_unique)
+                print "This was applicable to the following images: "
+                print not_unique_but_correct
+                print "May want to look into the following files: "
+                print errors
+            else:
+                print "Please load ASN before doing accuracy tests m8"
 
         else:
             print "Method selection error!"
@@ -255,7 +302,7 @@ class img_processor():
                 img_from_tess = cv2.rectangle(img_from_tess, (x, y), (x_2, y_2), 255,
                                     3)  # Draw a rectangle around each character found by OCR
             boxed = Image.fromarray(img_from_tess)
-            boxed.show()
+            # boxed.show()
             boxed.save('boxed.png')
             # instead of returning the iterator, want to extract slices corresponding to textlines and pass them on.
             # hopefully, the list will be ordered, for easier use in the following
@@ -529,7 +576,7 @@ class img_processor():
 
                 black_bg_spec -= mask_accepted_spec
             bg_for_final_spec = 255 - black_bg_spec
-            Image.fromarray(bg_for_final_spec).show()
+            # Image.fromarray(bg_for_final_spec).show()
 
             # contour analysis again, to be followed by global thresholding on the grayscale image
             im2_k, contours_k, hierarchy_k = cv2.findContours(bg_for_final_spec, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE)  # the hierarchy does not matter
@@ -609,7 +656,7 @@ class img_processor():
 
         black_bg = np.zeros((img_read.shape[0], img_read.shape[1]), dtype='uint8')
         cv2.drawContours(black_bg, large_contours, -1, color=255, thickness=-1)
-        Image.fromarray(black_bg).show()  # black text on white background
+        # Image.fromarray(black_bg).show()  # black text on white background
         combined = np.logical_and(255 - black_bg, 255 - noisy)  # why are some tiny pixels left here?
         combined = combined.astype('uint8')*255
 
@@ -712,7 +759,7 @@ class img_processor():
             f = open("output.txt", 'w')
             f.write(output_text)  # overwrites
             f.close()  # close file to release memory
-            api.GetThresholdedImage().show()  # optional, for debugging
+            # api.GetThresholdedImage().show()  # optional, for debugging
 
             # draw rectangles to show where Tesseract found characters and lines
             ls = api.GetTextlines()
@@ -838,7 +885,7 @@ class img_processor():
         blur = cv2.GaussianBlur(image_grayscale, (21, 21), 0)
         img_binary = cv2.threshold(blur, 0, 255, cv2.THRESH_OTSU)[1]
         img_for_tess = Image.fromarray(img_binary)
-        img_for_tess.show()
+        # img_for_tess.show()
 
         # Tesseract part
         with PyTessBaseAPI(psm=6) as api:
@@ -955,6 +1002,15 @@ class CSVLoader():  # also functions as CSV handler
                 print ', '.join(row)
                 asn_data.append(row)
         csvfile.close()
+
+        # want to remove empty lines from the list of ASN elements (go bottom-up)
+        nonempty_found = False
+        while not nonempty_found:
+            element = asn_data[len(asn_data)-1]
+            if (len(element[0]) > 1) or (element[1] > 1) or (element[2] > 1) or (element[3] > 1):
+                nonempty_found = True
+            else:
+                asn_data.pop()
         # self.ASN_data = asn_data
         # ata_arr = np.asarray(asn_data)
 
@@ -971,6 +1027,16 @@ def DELETION(A, cost=1):
 
 def SUBSTITUTION(A, B, cost=1):
   return cost
+
+def DELETIONSMATCHER(A, cost=1): # Does NOT need to be integer
+    if A in " ":
+        return 0
+    elif A.isalpha():
+        return 0.2
+    elif A.isdigit():
+        return 0.2
+    else:
+        return cost
 
 
 Trace = collections.namedtuple("Trace", ["cost", "ops"])
@@ -1153,6 +1219,22 @@ class matcher():
     def __init__(self, ASN_data):
         self.asn = ASN_data
 
+    def correctFinder(self, filename):
+        # img name is on form IMG_DDDD.JPG. DDDD should be found in self.asn[index][3]
+        asn = self.asn
+
+        yo = re.findall(r'\d{4}', filename, re.UNICODE)
+        if len(yo) == 1:
+            code = yo[0]
+
+            for k in range(1, len(asn)):
+                if code in asn[k][3]:
+                    return k
+                    break
+
+        else:
+            print "Error in handling filename"
+            return False
     # should replace the below with the one found in categorizelinestest.py
     def itemcodeFinderOutdated(self, text_lines, categories):
         """Find the best match(es) for item code. Return the corresponding candidates
@@ -1250,7 +1332,7 @@ class matcher():
 
             print candidate_values
 
-            return candidate_values  # may move the return statement
+            return candidate_values, itemcode_cand_indeces  # may move the return statement
 
         elif (type(categories['Itemcode']) is not bool) and (type(categories['Text description']) == bool):
             itemcode_raw = text_lines[categories['Itemcode']]
@@ -1272,7 +1354,7 @@ class matcher():
 
             print candidate_values
 
-            return candidate_values  # may move
+            return candidate_values, itemcode_cand_indeces  # may move
 
         elif (type(categories['Itemcode']) == bool) and (type(categories['Text description']) is not bool):
             text_description_raw = text_lines[categories['Text description']]
@@ -1293,7 +1375,7 @@ class matcher():
                 candidate_values.append(asn[itemcode_cand_indeces[j]][1])
             print candidate_values
 
-            return candidate_values
+            return candidate_values, itemcode_cand_indeces
 
         else:
             print "Did not find neither itemcode nor text description. Consider changing image processing method "
@@ -1387,7 +1469,7 @@ class matcher():
             print sigdig_list
             extractor = charextractor(img, boxes)
             extract_res = extractor.extractSolid(categories['Solidcode'], sigdig_list)
-            Image.fromarray(extract_res).show()  # is it array or image format?
+            # Image.fromarray(extract_res).show()  # is it array or image format?
             Image.fromarray(extract_res).save("solidslice.png")
             print "Done - for now "
             # check which digits are significant
@@ -1501,19 +1583,31 @@ class matcher():
         del_penalties = np.ones((128, 128), dtype=np.float64)*3
         sub_hacks = np.zeros((128, 128), dtype=np.float64)"""
 
+        dist_threshold = 0.30
+
         # test the lines against ASN, not concerned about the values of the best matches yet, just want to confirm line types
         for index in range(0, len(text_lines)):  # do a loophole to find the substitution-based score..may lead to negative values???
             cur_min_ic = 1000
             cur_min_sa = 1000
             cur_min_td = 1000
-            for element_no in range(0, len(asn)):
-                # dist_ic = WagnerFischer(text_lines[index], asn[element_no][1]).cost
-                dist_ic = 1.0*Levenshtein.distance(text_lines[index], asn[element_no][1])/len(asn[element_no][1])
+            for element_no in range(1, len(asn)):
+
+                dist_ic = 1.0*WagnerFischer(text_lines[index], asn[element_no][1], deletion=DELETIONSMATCHER).cost/max(len(asn[element_no][1]), 1)
+                # dist_ic = 1.0*Levenshtein.distance(text_lines[index], asn[element_no][1])/max(len(asn[element_no][1]), 1)
+                if len(asn[element_no][1]) == 0 or len(text_lines[index]) == 0:
+                    dist_ic = 999
+
                 checking_sa = text_lines[index].replace("-", "")
-                # dist_sa = WagnerFischer(checking_sa, asn[element_no][2]).cost
-                dist_sa = 1.0*Levenshtein.distance(checking_sa, asn[element_no][2])/len(asn[element_no][2])
-                # dist_td = WagnerFischer(text_lines[index], asn[element_no][0]).cost
-                dist_td = 1.0*Levenshtein.distance(text_lines[index], asn[element_no][0])/len(asn[element_no][0])
+                dist_sa = 1.0 * WagnerFischer(checking_sa, asn[element_no][2], deletion=DELETIONSMATCHER).cost/max(len(asn[element_no][2]), 1)
+                # dist_sa = 1.0*Levenshtein.distance(checking_sa, asn[element_no][2])/max(len(asn[element_no][2]), 1)
+                if len(asn[element_no][2]) == 0 or len(text_lines[index]) == 0:
+                    dist_sa = 999
+
+                dist_td = 1.0*WagnerFischer(text_lines[index], asn[element_no][0], deletion=DELETIONSMATCHER).cost/max(len(asn[element_no][0]), 1)
+                # dist_td = 1.0*Levenshtein.distance(text_lines[index], asn[element_no][0])/max(len(asn[element_no][0]), 1)
+                if len(asn[element_no][0]) == 0 or len(text_lines[index]) == 0:
+                    dist_td = 999
+
                 if dist_ic < cur_min_ic:
                     result_list[index][0] = dist_ic
                     cur_min_ic = dist_ic
@@ -1536,7 +1630,7 @@ class matcher():
         index_ic = False
         index_sa = False
         index_td = False
-
+        # find the best scorers (based on ASN) for each category
         for x in range(0, len(result_list)):  # if tied, go by index heuristics
 
             if result_list[x][0] < min_dist_ic:
@@ -1594,15 +1688,33 @@ class matcher():
         print result_list_dict
         print final_ind_dict
 
+        if min_dist_ic < dist_threshold:
+            final_ind_dict['Itemcode'] = result_list_dict['Itemcode']
+
+        if min_dist_sa < dist_threshold:
+            final_ind_dict['Solidcode'] = result_list_dict['Solidcode']
+
+        if min_dist_td < dist_threshold:
+            final_ind_dict['Text description'] = result_list_dict['Text description']
+
         if type(ind_dictionary['Text description']) is bool:
             final_ind_dict['Text description'] = False
 
         print final_ind_dict
 
-        print self.itemcodeFinder(text_lines, final_ind_dict)  # forward this later!
-        print "Remember to forward this output to the next step ! "
+        itemcode_values, itemcode_indeces = self.itemcodeFinder(text_lines, final_ind_dict)  # forward this later!
 
-        return final_ind_dict, text_lines
+        unique_ic = True
+        itemcode_check_uniques = itemcode_values
+        # check if the item code values are unique.
+        while len(itemcode_check_uniques) > 1:
+            element = itemcode_check_uniques.pop()
+            if element not in itemcode_check_uniques:
+                print "Not unique item code! "
+                unique_ic = False
+        # print "Remember to forward this output to the next step ! "
+
+        return final_ind_dict, text_lines, itemcode_indeces, unique_ic
 
 
 class charextractor():
@@ -1646,7 +1758,7 @@ class outputInterpreter():
         line = line.replace("O", "0")
         line = line.replace("I", "1")
         line = line.replace("L", "1")
-        print line
+        # print line
         # determine if the line is a candidate for item code or not
         five_or_more_digits_consecutive = re.findall(r"\d{5,20}", line, re.UNICODE)
         expression_xx_xx = re.findall(r"\d{2}-\d{2}", line, re.UNICODE)
@@ -1679,7 +1791,7 @@ class outputInterpreter():
         line = line.replace("O", "0")
         line = line.replace("I", "1")
         line = line.replace("L", "1")
-        print line
+        # print line
         solidcode = False
         # determine is it's a candidate for solid code or not
 
@@ -1703,7 +1815,7 @@ class outputInterpreter():
         # format the string
         line = line.replace(" ", "")
         line = line.upper()
-        print line
+        # print line
         # look for formats satisfying the setup of assort code
         c_d_d = re.findall(r"[A-Z]{1}\d{2,4}", line, re.UNICODE)
 
@@ -1747,7 +1859,7 @@ class outputInterpreter():
         else:
             return False
 
-    def categorizeLines(self, ocr_output):
+    def categorizeLinesOutdated(self, ocr_output):
         """Input: String output from Tesseract
         Output: A dictionary containing the indeces for the useful pieces of information
         Assumption: No lines are missed"""
@@ -1971,6 +2083,223 @@ class outputInterpreter():
         print dict_indeces
         print candidate_info
         return list_lines, dict_indeces
+
+    def categorizeLines(self, ocr_output):
+        """Input: String output from Tesseract
+        Output: A dictionary containing the indeces for the useful pieces of information
+        Assumption: No lines are missed"""
+
+        dict_indeces = {'Itemcode': False, 'Solidcode': False, 'Pack size': False, 'Text description': False}  # initialize dictionary
+        min_index_dict = {'Itemcode': 0, 'Solidcode': 1,
+                          'Pack size': 2, 'Carton number': 3, 'Text description': 4}
+        max_index_dict = {'Itemcode': 100, 'Solidcode': 100,
+                          'Pack size': 100, 'Carton number': 100, 'Text description': 100}
+        # step 1: split the ocr output to a list of lines
+        list_lines = re.split('\n', ocr_output)
+
+        candidate_info = []
+        for x in range(0, len(list_lines)):
+            candidate_info.append([])  # will store the candidate information in text format, and then use the keyword "in" to decide how to treat the lines later
+
+        # first pass: find the candidate categories for each line
+        k = 0
+        for line in list_lines:
+
+            if "SOLID" in line.upper():
+                # print "Have a line indicating the position of the solid code and item code!"
+                max_index_dict['Itemcode'] = min(k-1, max_index_dict['Itemcode'])
+                min_index_dict['Solidcode'] = max(k+1, min_index_dict['Solidcode'])
+                min_index_dict['Pack size'] = max(k+2, min_index_dict['Pack size'])
+                min_index_dict['Carton number'] = max(k+3, min_index_dict['Carton number'])
+                min_index_dict['Text description'] = max(k+4, min_index_dict['Text description'])
+
+            if self.itemCand(line):
+                # print "Item code candidate found"
+                candidate_info[k].append("Itemcode")
+
+            if self.assortCand(line) or self.solidCand(line):
+                    # print "Solid / Assort code candidate found"
+                    candidate_info[k].append("Solidcode")
+
+            if self.packCand(line):
+                # print "Pack size candidate found"
+                candidate_info[k].append("Pack size")
+
+            if self.cartonCand(line):
+                # print "Carton number candidate found"
+                candidate_info[k].append("Carton number")
+
+            if self.descriptionCand(line):
+                # print "Text description candidate found"
+                candidate_info[k].append("Text description")
+
+            k += 1
+        print candidate_info
+
+        # Start the second pass: Uniquely determining the indeces for each category
+
+        # preparation stage: pop all the impossible cases, assuming no lines are omitted in image processing
+        for x in range(0, len(candidate_info)):
+            j = 0
+            for element in candidate_info[x]:
+                if min_index_dict[element] > x:
+                    candidate_info[x].pop(j)
+                j += 1
+        # print "After removing impossible cases, the new list is: "
+        print candidate_info
+
+        # Scenario 1: easy case
+        pack_occur = 0
+        pack_index = []
+        j = 0
+        for line in candidate_info:
+            if "Pack size" in line:
+                pack_occur += 1
+                pack_index.append(j)
+            j += 1
+
+        if pack_occur == 1:  # look for the index of carton no
+            dict_indeces['Pack size'] = pack_index[0]
+            max_index_dict['Itemcode'] = pack_index[0]-1
+            max_index_dict['Solidcode'] = pack_index[0]-1
+            min_index_dict['Text description'] = max(min_index_dict['Text description'], pack_index[0]+2)
+
+        carton_index = []
+        j = 0
+        for line in candidate_info:
+            if "Carton number" in line:
+                carton_index.append(j)
+            j += 1
+
+        if len(carton_index) == 1:
+            max_index_dict['Itemcode'] = min(carton_index[0]-1, max_index_dict['Itemcode'])
+            max_index_dict['Solidcode'] = min(carton_index[0]-1, max_index_dict['Solidcode'])
+            min_index_dict['Text description'] = max(min_index_dict['Text description'], carton_index[0]+1)
+
+        # again, pop all the impossible cases, assuming no lines are omitted in image processing
+        for x in range(0, len(candidate_info)):
+            j = 0
+            for element in candidate_info[x]:
+                if min_index_dict[element] > x:
+                    candidate_info[x].pop(j)
+                j += 1
+        # print "After removing impossible cases, the new list is: "
+        print candidate_info
+
+        # pop all the impossible cases, assuming no lines are omitted in image processing
+        for x in range(0, len(candidate_info)):
+            j = 0
+            for element in candidate_info[x]:
+                if max_index_dict[element] < x:
+                    candidate_info[x].pop(j)
+                j += 1
+        # print "After removing impossible cases, the new list is: "
+        print candidate_info
+
+        # find the index of the text description line if there's a clear-cut case
+        descr_count = 0
+        descr_index = []
+        j = 0
+        for line in candidate_info:
+            if "Text description" in line:
+                descr_count += 1
+                descr_index.append(j)
+            j += 1
+
+        if descr_count == 1:
+            dict_indeces['Text description'] = descr_index[0]
+            max_index_dict['Itemcode'] = min(max_index_dict['Itemcode'], descr_index[0]-4)
+            max_index_dict['Solidcode'] = min(max_index_dict['Solidcode'], descr_index[0]-3)
+            max_index_dict['Pack size'] = min(max_index_dict['Pack size'], descr_index[0]-2)
+            max_index_dict['Carton number'] = min(max_index_dict['Carton number'], descr_index[0]-1)
+            max_index_dict['Text description'] = descr_index[0]
+        # could do another looping through at this pt to eliminate impossible cases
+
+            # again, pop all the impossible cases, assuming no lines are omitted in image processing
+            for x in range(0, len(candidate_info)):
+                j = 0
+                for element in candidate_info[x]:
+                    if min_index_dict[element] > x:
+                        candidate_info[x].pop(j)
+                    j += 1
+            # print "After removing impossible cases, the new list is: "
+            print candidate_info
+
+            # pop all the impossible cases, assuming no lines are omitted in image processing
+            for x in range(0, len(candidate_info)):
+                j = 0
+                for element in candidate_info[x]:
+                    if max_index_dict[element] < x:
+                        candidate_info[x].pop(j)
+                    j += 1
+            # print "After removing impossible cases, the new list is: "
+            print candidate_info
+
+        solid_count = 0
+        solid_index = []
+        j = 0
+        for line in candidate_info:
+            if "Solidcode" in line:
+                solid_count += 1
+                solid_index.append(j)
+            j += 1
+
+        if solid_count == 1:
+            dict_indeces['Solidcode'] = solid_index[0]
+            max_index_dict['Itemcode'] = min(solid_index[0]-1, max_index_dict['Itemcode'])
+            min_index_dict['Pack size'] = max(min_index_dict['Pack size'], solid_index[0]+1)
+            min_index_dict['Carton number'] = max(min_index_dict['Carton number'], solid_index[0]+2)
+            min_index_dict['Text description'] = max(min_index_dict['Text description'], solid_index[0]+3)
+
+            # again, pop all the impossible cases, assuming no lines are omitted in image processing
+            for x in range(0, len(candidate_info)):
+                j = 0
+                for element in candidate_info[x]:
+                    if min_index_dict[element] > x:
+                        candidate_info[x].pop(j)
+                    j += 1
+            # print "After removing impossible cases, the new list is: "
+            print candidate_info
+
+            # pop all the impossible cases, assuming no lines are omitted in image processing
+            for x in range(0, len(candidate_info)):
+                j = 0
+                for element in candidate_info[x]:
+                    if max_index_dict[element] < x:
+                        candidate_info[x].pop(j)
+                    j += 1
+            # print "After removing impossible cases, the new list is: "
+            print candidate_info
+
+        item_count = 0
+        item_index = []
+        j = 0
+
+        for line in candidate_info:
+            if "Itemcode" in line:
+                item_count += 1
+                item_index.append(j)
+            j += 1
+
+        if item_count == 1:
+            dict_indeces['Itemcode'] = item_index[0]
+            min_index_dict['Solidcode'] = max(min_index_dict['Solidcode'], item_index[0]+1)
+            min_index_dict['Pack size'] = max(min_index_dict['Pack size'], item_index[0]+2)
+            min_index_dict['Carton number'] = max(min_index_dict['Carton number'], item_index[0]+3)
+            min_index_dict['Text description'] = max(min_index_dict['Text description'], item_index[0]+4)
+
+        # based on min_index_dict and max_index_dict, infer the indeces of the unassigned lines
+        for key, value in dict_indeces.iteritems():
+            if not value:
+                if min_index_dict[key] == max_index_dict[key]:
+                    dict_indeces[key] = min_index_dict[key]
+        # small issue: get both item and solid code this way, need a way to determine which of the two we have.
+        # Can later use similar methods to previous in order to distinguish between the two categories
+
+        print dict_indeces
+        print candidate_info
+        return list_lines, dict_indeces
+
 
 if __name__ == "__main__":
     app = simpleapp_tk(None)  # No parent because first element
