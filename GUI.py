@@ -72,7 +72,7 @@ class simpleapp_tk(Tkinter.Tk):
         self.label4.grid(column=0, row=2)
 
         # dropdown menu for selecting image processing procedure
-        optionList = ["Hybrid", "Adaptive Thresholding", "AccItemCTest", "Advanced", "Basic", "ContourGaussianKernelOtsu", "GaussianKernelAndOtsu", "Otsu"]  # add more later
+        optionList = ["Hybrid", "Adaptive Thresholding", "AccItemCTest", "HybridItemCTest", "Advanced", "Basic", "ContourGaussianKernelOtsu", "GaussianKernelAndOtsu", "Otsu"]  # add more later
         self.dropVar = Tkinter.StringVar()
         self.dropVar.set("Hybrid")  # default
         self.dropMenu1 = Tkinter.OptionMenu(self, self.dropVar, *optionList, command=self.func)
@@ -191,6 +191,53 @@ class simpleapp_tk(Tkinter.Tk):
             solidcode_arr = img[y_top_left:y_bottom_right, x_top_left:x_bottom_right, :]
 
             Image.fromarray(solidcode_arr).save('solidslice.png')
+
+        elif self.method in "HybridItemCTest":
+            if self.ASN_loaded:
+                directory = askdirectory()
+
+                count_attempts = 0
+                count_correct = 0
+                count_correct_not_unique = 0
+                errors = []
+                not_unique_but_correct = []
+
+                for filename in os.listdir(directory):
+                    if filename.endswith(".JPG"):
+                        count_attempts += 1
+                        # img_read = cv2.imread(os.path.join(directory,filename))
+                        processor = img_processor(os.path.join(directory, filename))
+                        text, boxes, img = processor.Hybrid()
+
+                        interpreter = outputInterpreter()
+                        text, categories = interpreter.categorizeLines(text)
+                        categories, text, itemcode_indeces, unique_ic = self.match_instance.checker(text,
+                                                                                                    categories)  # need to add accuracy check
+                        correct_index = self.match_instance.correctFinder(filename)
+                        # print itemcode_indeces
+                        # print "Correct index: " + str(correct_index)
+                        if (correct_index in itemcode_indeces) and unique_ic:
+                            count_correct += 1
+                        elif (correct_index in itemcode_indeces) and not unique_ic:
+                            count_correct_not_unique += 1
+                            not_unique_but_correct.append(filename)
+                        else:
+                            errors.append(filename)
+                        print "Categories: "
+                        print categories
+                        print "Text: "
+                        print text
+                    print "Images processed: " + str(count_attempts)
+                    print "Correctly determined the itemcode: " + str(count_correct)
+                print "Line level accuracy solid code: " + str(100.0 * count_correct / count_attempts)
+                print "Overall, the number of ICs that were not uniquely determined was: " + str(
+                    count_correct_not_unique)
+                print "This was applicable to the following images: "
+                print not_unique_but_correct
+                print "May want to look into the following files: "
+                print errors
+            else:
+                print "Please load ASN before doing accuracy tests m8"
 
         elif self.method in "AccItemCTest":  # for now, use AdaptiveThresholding for Image processing
             if self.ASN_loaded:
@@ -314,7 +361,7 @@ class img_processor():
         img = cv2.imread(self.filename)
         load_time = time.clock()
         print "Load time: " + str(load_time - tic)
-        contour_area_min = 400  # 700 to 800 seem to work well
+        contour_area_min = 400  # 700 to 800 seem to work well. Was 400
 
         # next split image into the three RGB channels
         img_red = img[:, :, 0]
@@ -631,7 +678,7 @@ class img_processor():
         # text_ret, boxes = self.Basic(the_end_image, did_not_think_so)
         text_ret, boxes = self.Basic(for_tess_img, for_tess_arr)
 
-        return img_ret, text_ret, boxes
+        return text_ret, boxes, img_ret
 
     def AdaptiveThresholding(self):
         img_read = cv2.imread(self.filename)
