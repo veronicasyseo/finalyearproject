@@ -239,6 +239,71 @@ class simpleapp_tk(Tkinter.Tk):
             else:
                 print "Please load ASN before doing accuracy tests m8"
 
+        elif self.method in "AdaptiveParameterExperiment":
+            offset_values = [0, 10, 20, 30, 40, 50, 60]
+            block_size_values = [41, 81, 121, 161]
+            if self.ASN_loaded:
+                directory = askdirectory() # only ask once
+
+                for bs_val in block_size_values:
+                    for os_val in offset_values:
+                        count_attempts = 0
+                        count_correct = 0
+                        count_correct_not_unique = 0
+                        errors = []
+                        not_unique_but_correct = []
+
+                        for filename in os.listdir(directory):
+                            if filename.endswith(".JPG"):
+                                count_attempts += 1
+                                # img_read = cv2.imread(os.path.join(directory,filename))
+                                processor = img_processor(os.path.join(directory, filename))
+                                text, boxes, img = processor.AdaptiveThresholdingExperiment(bs_val, os_val)
+
+                                interpreter = outputInterpreter()
+                                text, categories = interpreter.categorizeLines(text)
+                                categories, text, itemcode_indeces, unique_ic = self.match_instance.checker(text,
+                                                                                                            categories)  # need to add accuracy check
+                                correct_index = self.match_instance.correctFinder(filename)
+                                # print itemcode_indeces
+                                # print "Correct index: " + str(correct_index)
+                                if (correct_index in itemcode_indeces) and unique_ic:
+                                    count_correct += 1
+                                elif (correct_index in itemcode_indeces) and not unique_ic:
+                                    count_correct_not_unique += 1
+                                    not_unique_but_correct.append(filename)
+                                else:
+                                    errors.append(filename)
+                                print "Categories: "
+                                print categories
+                                print "Text: "
+                                print text
+                            print "Images processed: " + str(count_attempts)
+                            print "Correctly determined the itemcode: " + str(count_correct)
+                        print "Line level accuracy solid code: " + str(100.0 * count_correct / count_attempts)
+                        print "Overall, the number of ICs that were not uniquely determined was: " + str(
+                            count_correct_not_unique)
+                        print "This was applicable to the following images: "
+                        print not_unique_but_correct
+                        print "May want to look into the following files: "
+                        print errors
+
+                        # collecting the results:
+                        with open("output.txt", "w") as outputfile:
+                            outputfile.write("Overall correct: " + str(count_correct))
+                            outputfile.write("Overall correct but not unique: " + str(count_correct_not_unique))
+                            outputfile.write("Value for block size" + str(bs_val))
+                            outputfile.write("Value for offset: " + str(os_val))
+                            outputfile.write("Number of images read: " + str(count_attempts))
+                            outputfile.write("Accuracy in %: " + str(100.0*count_correct / count_attempts))
+                            outputfile.write("Not unique but correct: ")
+                            outputfile.writelines(not_unique_but_correct)
+                            outputfile.write("Errors: ")
+                            outputfile.writelines(errors)
+                        
+                else:
+                    print "Please load ASN before doing accuracy tests m8"
+
         elif self.method in "AccItemCTest":  # for now, use AdaptiveThresholding for Image processing
             if self.ASN_loaded:
                 directory = askdirectory()
@@ -679,6 +744,40 @@ class img_processor():
         text_ret, boxes = self.Basic(for_tess_img, for_tess_arr)
 
         return text_ret, boxes, img_ret
+
+    def AdaptiveThresholdingExperiment(self, block_size, offset):
+        img_read = cv2.imread(self.filename)
+        area_lower_bound = 200  # originally 300
+
+        grayscale = cv2.cvtColor(img_read,
+                                 cv2.COLOR_BGR2GRAY)  # potential improvement: using multiple color channels and combining results
+
+        block_size = block_size
+        offset = offset
+        binar_adaptive = threshold_adaptive(grayscale, block_size, offset=offset)
+
+        # next, do noise removal
+        noisy = binar_adaptive.astype('uint8') * 255
+
+        im2, contours, hierarchy = cv2.findContours(noisy, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
+
+        large_contours = []
+
+        for cnt in contours:
+            if cv2.contourArea(cnt) > area_lower_bound:
+                large_contours.append(cnt)
+
+        black_bg = np.zeros((img_read.shape[0], img_read.shape[1]), dtype='uint8')
+        cv2.drawContours(black_bg, large_contours, -1, color=255, thickness=-1)
+        # Image.fromarray(black_bg).show()  # black text on white background
+        combined = np.logical_and(255 - black_bg, 255 - noisy)  # why are some tiny pixels left here?
+        combined = combined.astype('uint8')*255
+
+        img_for_tess = Image.fromarray(combined)
+
+        text_output, boxes = self.Basic(img_for_tess, combined)
+
+        return text_output, boxes, (255-combined)
 
     def AdaptiveThresholding(self):
         img_read = cv2.imread(self.filename)
