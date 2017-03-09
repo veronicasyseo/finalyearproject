@@ -289,7 +289,7 @@ class simpleapp_tk(Tkinter.Tk):
                         print errors
 
                         # collecting the results:
-                        with open("output.txt", "w") as outputfile:
+                        with open("output.txt", "a") as outputfile:
                             outputfile.write("Overall correct: " + str(count_correct))
                             outputfile.write("Overall correct but not unique: " + str(count_correct_not_unique))
                             outputfile.write("Value for block size" + str(bs_val))
