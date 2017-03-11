@@ -405,14 +405,17 @@ class img_processor():
             iterator.Begin()
             level = RIL.SYMBOL
             for r in iterate_level(iterator, level):
-                # print r.BoundingBox(level)
-                x = r.BoundingBox(level)[0]
-                y = r.BoundingBox(level)[1]
-                x_2 = r.BoundingBox(level)[2]
-                y_2 = r.BoundingBox(level)[3]
+                try: 
+                    # print r.BoundingBox(level)
+                    x = r.BoundingBox(level)[0]
+                    y = r.BoundingBox(level)[1]
+                    x_2 = r.BoundingBox(level)[2]
+                    y_2 = r.BoundingBox(level)[3]
 
-                img_from_tess = cv2.rectangle(img_from_tess, (x, y), (x_2, y_2), 255,
-                                    3)  # Draw a rectangle around each character found by OCR
+                    img_from_tess = cv2.rectangle(img_from_tess, (x, y), (x_2, y_2), 255,
+                                        3)  # Draw a rectangle around each character found by OCR
+                except TypeError:
+                    print "Something wrong with the iterator!"
             boxed = Image.fromarray(img_from_tess)
             # boxed.show()
             boxed.save('boxed.png')
