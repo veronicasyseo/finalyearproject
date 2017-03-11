@@ -4,6 +4,8 @@ Six Sigma Green Belt project for X Company
 
 
 ## GUI.py:
+> Update 03/11/2017: Exception handling
+
 > Update 03/09/2017: Added test option for the Hybrid method 
 
 > Update 03/03/2017: Further improvements to matching logic. Can now correctly identify the item code in ≈ 98% of samples, as long as there is an ASN. 
