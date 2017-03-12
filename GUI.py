@@ -72,7 +72,7 @@ class simpleapp_tk(Tkinter.Tk):
         self.label4.grid(column=0, row=2)
 
         # dropdown menu for selecting image processing procedure
-        optionList = ["Hybrid", "Adaptive Thresholding", "AccItemCTest", "HybridItemCTest", "Advanced", "Basic", "ContourGaussianKernelOtsu", "GaussianKernelAndOtsu", "Otsu"]  # add more later
+        optionList = ["Hybrid", "Adaptive Thresholding", "AccItemCTest", "AdaptiveParameterExperiment", "HybridItemCTest", "AdaptiveWholeBoxTest", "Advanced", "Basic", "ContourGaussianKernelOtsu", "GaussianKernelAndOtsu", "Otsu"]  # add more later
         self.dropVar = Tkinter.StringVar()
         self.dropVar.set("Hybrid")  # default
         self.dropMenu1 = Tkinter.OptionMenu(self, self.dropVar, *optionList, command=self.func)
@@ -107,22 +107,27 @@ class simpleapp_tk(Tkinter.Tk):
             text, img = processor.Benchmark()  # will later update to use the method chosen in drop-down menu
             self.DisplayProcessed(img.resize((self.width, self.height), Image.ANTIALIAS))
             self.DisplayOCRText(text)  # implement later
+            
         elif self.method in "Advanced":
             text, img = processor.Advanced()
             self.DisplayProcessed(img.resize((self.width, self.height), Image.ANTIALIAS))
             self.DisplayOCRText(text)
+
         elif self.method in "Otsu":
             text, img = processor.Otsu()
             self.DisplayProcessed(img.resize((self.width, self.height), Image.ANTIALIAS))
             self.DisplayOCRText(text)
+
         elif self.method in "GaussianKernelAndOtsu":
             text, img = processor.GaussianKernelAndOtsu()
             self.DisplayProcessed(img.resize((self.width, self.height), Image.ANTIALIAS))
             self.DisplayOCRText(text)
+
         elif self.method in "ContourGaussianKernelOtsu":
             text, img = processor.ContourGaussianKernelOtsu()
             self.DisplayProcessed(img.resize((self.width, self.height), Image.ANTIALIAS))
             self.DisplayOCRText(text)
+
         elif self.method in "Hybrid":
             img, text, boxes = processor.Hybrid()  # and what to do about the iterator?
             img_pic = Image.fromarray(img)
@@ -133,7 +138,7 @@ class simpleapp_tk(Tkinter.Tk):
             # at this point, want to look for candidates, but only if the ASN has already been loaded
             # keep it optional for now to load ASN, in order to faciliate testing
             if self.ASN_loaded:
-                categories, text, itemcode_indeces, unique_ic = self.match_instance.checker(text, categories)
+                categories, text, itemcode_indeces, unique_ic, skip_segmentation, solidassort_indeces = self.match_instance.checker(text, categories)
 
                 # itemcode_cands, itemcode_indeces = self.match_instance.boxFinder(text, categories, img, boxes)
                 # print itemcode_cands
@@ -166,31 +171,44 @@ class simpleapp_tk(Tkinter.Tk):
             text, categories = interpreter.categorizeLines(text)
 
             if self.ASN_loaded:
-                categories, text, itemcode_indeces, unique_ic = self.match_instance.checker(text, categories)
+                categories, text, itemcode_indeces, unique_ic, skip_segmentation, solidassort_indeces = self.match_instance.checker(text, categories)
 
                 # itemcode_cands, itemcode_indeces = self.match_instance.boxFinder(text, categories, img, boxes)
                 # print itemcode_cands
                 # self.DisplayCands(itemcode_cands)
-            print "Itemcode indeces: "
-            print itemcode_indeces
 
-            index_solid = categories['Solidcode']
+                if skip_segmentation:
+                    solidassort = text[categories['Solidcode']]
+                    print "Solid/assort code: " + str(solidassort)
+                    print solidassort_indeces
+                    print itemcode_indeces
+                    # print which line from ASN it corresponds to.
+                    for element in solidassort_indeces:
+                        if element in itemcode_indeces:
+                            print element
+                            print "Found the box"
 
-            edge_adjustment = 10  # pixels  # introduces issues of out of bound of arrays in rare cases
+                else:  # will need to do segmentation
+                    print "Itemcode indeces: "
+                    print itemcode_indeces
 
-            coordinates = boxes[index_solid]
-            # x_top_left = max(coordinates[0] - edge_adjustment, 0)
-            x_top_left = 0
-            y_top_left = max(coordinates[1] - edge_adjustment, 0)
-            # x_bottom_right = min(coordinates[2] + edge_adjustment, img.shape[0])
-            x_bottom_right = img.shape[0]
-            y_bottom_right = min(coordinates[3] + edge_adjustment, img.shape[1])
+                    index_solid = categories['Solidcode']
 
-            img = cv2.imread(filename)
+                    edge_adjustment = 10  # pixels  # introduces issues of out of bound of arrays in rare cases
 
-            solidcode_arr = img[y_top_left:y_bottom_right, x_top_left:x_bottom_right, :]
+                    coordinates = boxes[index_solid]
+                    # x_top_left = max(coordinates[0] - edge_adjustment, 0)
+                    x_top_left = 0
+                    y_top_left = max(coordinates[1] - edge_adjustment, 0)
+                    # x_bottom_right = min(coordinates[2] + edge_adjustment, img.shape[0])
+                    x_bottom_right = img.shape[0]
+                    y_bottom_right = min(coordinates[3] + edge_adjustment, img.shape[1])
 
-            Image.fromarray(solidcode_arr).save('solidslice.png')
+                    img = cv2.imread(filename)
+
+                    solidcode_arr = img[y_top_left:y_bottom_right, x_top_left:x_bottom_right, :]
+
+                    Image.fromarray(solidcode_arr).save('solidslice.png')
 
         elif self.method in "HybridItemCTest":
             if self.ASN_loaded:
@@ -211,7 +229,7 @@ class simpleapp_tk(Tkinter.Tk):
 
                         interpreter = outputInterpreter()
                         text, categories = interpreter.categorizeLines(text)
-                        categories, text, itemcode_indeces, unique_ic = self.match_instance.checker(text,
+                        categories, text, itemcode_indeces, unique_ic, skip_segmentation, solidassort_indeces = self.match_instance.checker(text,
                                                                                                     categories)  # need to add accuracy check
                         correct_index = self.match_instance.correctFinder(filename)
                         # print itemcode_indeces
@@ -262,7 +280,7 @@ class simpleapp_tk(Tkinter.Tk):
 
                                 interpreter = outputInterpreter()
                                 text, categories = interpreter.categorizeLines(text)
-                                categories, text, itemcode_indeces, unique_ic = self.match_instance.checker(text,
+                                categories, text, itemcode_indeces, unique_ic, skip_segmentation, solidassort_indeces = self.match_instance.checker(text,
                                                                                                             categories)  # need to add accuracy check
                                 correct_index = self.match_instance.correctFinder(filename)
                                 # print itemcode_indeces
@@ -291,16 +309,23 @@ class simpleapp_tk(Tkinter.Tk):
                         # collecting the results:
                         with open("output.txt", "a") as outputfile:
                             outputfile.write("Overall correct: " + str(count_correct))
+                            outputfile.write("\n")
                             outputfile.write("Overall correct but not unique: " + str(count_correct_not_unique))
-                            outputfile.write("Value for block size" + str(bs_val))
+                            outputfile.write("\n")
+                            outputfile.write("Value for block size " + str(bs_val))
+                            outputfile.write("\n")
                             outputfile.write("Value for offset: " + str(os_val))
+                            outputfile.write("\n")
                             outputfile.write("Number of images read: " + str(count_attempts))
+                            outputfile.write("\n")
                             outputfile.write("Accuracy in %: " + str(100.0*count_correct / count_attempts))
+                            outputfile.write("\n")
                             outputfile.write("Not unique but correct: ")
                             outputfile.writelines(not_unique_but_correct)
+                            outputfile.write("\n")
                             outputfile.write("Errors: ")
                             outputfile.writelines(errors)
-                        
+
                 else:
                     print "Please load ASN before doing accuracy tests m8"
 
@@ -322,7 +347,7 @@ class simpleapp_tk(Tkinter.Tk):
                         text, boxes, img = processor.AdaptiveThresholding()
                         interpreter = outputInterpreter()
                         text, categories = interpreter.categorizeLines(text)
-                        categories, text, itemcode_indeces, unique_ic = self.match_instance.checker(text, categories)  # need to add accuracy check
+                        categories, text, itemcode_indeces, unique_ic, skip_segmentation, solidassort_indeces = self.match_instance.checker(text, categories)  # need to add accuracy check
                         correct_index = self.match_instance.correctFinder(filename)
                         # print itemcode_indeces
                         # print "Correct index: " + str(correct_index)
@@ -348,6 +373,59 @@ class simpleapp_tk(Tkinter.Tk):
             else:
                 print "Please load ASN before doing accuracy tests m8"
 
+        elif self.method in "AdaptiveWholeBoxTest":
+            if self.ASN_loaded:
+                directory = askdirectory()
+
+                count_attempts = 0
+                count_correct_ic = 0
+                count_correct_sa = 0
+                count_correct_box = 0
+                not_unique_but_correct = []
+                errors = []
+                count_correct_not_unique = 0
+
+                for filename in os.listdir(directory):  # note: skip_segmentation's requirement is too strict currently. Try without it at all
+                    if filename.endswith(".JPG"):
+                        if self.match_instance.inPrintedList(filename):  # then do adaptive thresholding
+                            count_attempts += 1
+                            processor = img_processor(os.path.join(directory, filename))
+                            text, boxes, img = processor.AdaptiveThresholding()
+
+                            interpreter = outputInterpreter()
+                            text, categories = interpreter.categorizeLines(text)
+                            categories, text, itemcode_indeces, unique_ic, skip_segmentation, solidassort_indeces = self.match_instance.checker(
+                                text, categories)  # need to add accuracy check
+                            correct_index = self.match_instance.correctFinder(filename)
+
+                            if (correct_index in itemcode_indeces) and unique_ic:
+                                count_correct_ic += 1
+                            elif (correct_index in itemcode_indeces) and not unique_ic:
+                                count_correct_not_unique += 1
+                                not_unique_but_correct.append(filename)
+                            else:
+                                pass
+                                # errors.append(filename)
+
+                            if correct_index in solidassort_indeces:
+                                count_correct_sa += 1
+
+                            if (correct_index in itemcode_indeces) and (correct_index in solidassort_indeces):
+                                count_correct_box += 1
+                                print "Found the box!"
+                            else:
+                                errors.append(filename)
+
+                            print "Results so far: "
+                            print "Overall accuracy" + str(1.0*count_correct_box/count_attempts)
+                            print "Tried " + str(count_attempts) + " boxes so far!"
+
+                # print results:
+                print "Overall accuracy: " + str(1.0*count_correct_box/count_attempts)
+                print "Itemcode accuracy: " + str(1.0*count_correct_ic/count_attempts)
+                print "Solidassort accuracy" + str(1.0*count_correct_sa/count_attempts)
+                print "Got these wrong:"
+                print errors
         else:
             print "Method selection error!"
 
@@ -390,6 +468,7 @@ class img_processor():
             api.SetVariable("tessedit_char_whitelist", "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0987654321-.:/()")
             api.SetImage(thresholded)
             text_output = api.GetUTF8Text().encode('utf-8')
+            print text_output  # can remove
             # image_processed = api.GetThresholdedImage()
             end_time = time.clock()
             print "Tesseract time: " + str(end_time - load_time)
@@ -405,17 +484,18 @@ class img_processor():
             iterator.Begin()
             level = RIL.SYMBOL
             for r in iterate_level(iterator, level):
-                try: 
-                    # print r.BoundingBox(level)
+                try:
+                # print r.BoundingBox(level)
                     x = r.BoundingBox(level)[0]
                     y = r.BoundingBox(level)[1]
                     x_2 = r.BoundingBox(level)[2]
                     y_2 = r.BoundingBox(level)[3]
 
                     img_from_tess = cv2.rectangle(img_from_tess, (x, y), (x_2, y_2), 255,
-                                        3)  # Draw a rectangle around each character found by OCR
+                                                  3)  # Draw a rectangle around each character found by OCR
                 except TypeError:
-                    print "Something wrong with the iterator!"
+                    print "Don't have iterator!"
+
             boxed = Image.fromarray(img_from_tess)
             # boxed.show()
             boxed.save('boxed.png')
@@ -795,6 +875,8 @@ class img_processor():
         # next, do noise removal
         noisy = binar_adaptive.astype('uint8') * 255
 
+        Image.fromarray(noisy).save("noisy_binary.png")  # can be commented out
+
         im2, contours, hierarchy = cv2.findContours(noisy, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
 
         large_contours = []
@@ -1173,6 +1255,8 @@ def INSERTION(A, cost=2):
 def DELETION(A, cost=1):
   return cost
 
+def DELETIONNOCOST(A, cost=0):
+    return cost
 
 def SUBSTITUTION(A, B, cost=1):
   return cost
@@ -1368,6 +1452,20 @@ class matcher():
     def __init__(self, ASN_data):
         self.asn = ASN_data
 
+    def inPrintedList(self, filename):
+        """Returns true if the parcel has only printed text, false if there is any handwriting in IC or S/A"""
+        asn = self.asn
+
+        ret_val = False
+
+        for index in range(1, len(asn)):
+            if str(asn[index][3]) in str(filename):
+                if str(asn[index][4]) in "Print":
+                    ret_val = True
+                    break
+
+        return ret_val
+
     def correctFinder(self, filename):
         # img name is on form IMG_DDDD.JPG. DDDD should be found in self.asn[index][3]
         asn = self.asn
@@ -1529,6 +1627,38 @@ class matcher():
         else:
             print "Did not find neither itemcode nor text description. Consider changing image processing method "
             return False
+
+    def solidassortFinderPerfect(self, text_lines, categories):
+        asn = self.asn
+        text_lines = text_lines
+        categories = categories
+        solidassort = text_lines[categories['Solidcode']].replace(" ", "")
+        solidassort_indeces = []
+
+        for k in range(0, len(asn)):
+            if solidassort in asn[k][2]:
+                solidassort_indeces.append(k)
+
+        return solidassort_indeces
+
+    def solidassortFinder(self, text_lines, categories, itemcode_indeces):
+        asn = self.asn
+
+        solidassort = text_lines[categories['Solidcode']]
+
+        min_dist = 1000
+        min_indeces = []
+
+        if type(categories['Solidcode']) is not bool:
+            for k in itemcode_indeces:  # assume that itemcode is correctly identified. Will introduce some bias, but will be similar to how the problem is actually solved
+                if WagnerFischer(solidassort, asn[k][3], deletion=DELETIONNOCOST).cost < min_dist:
+                    min_dist = WagnerFischer(solidassort, asn[k][3], deletion=DELETIONNOCOST).cost
+                    min_indeces = []
+                    min_indeces.append(k)
+                elif WagnerFischer(solidassort, asn[k][3], deletion=DELETIONNOCOST).cost == min_dist:
+                    min_indeces.append(k)
+
+        return min_indeces
 
     def solidorassort(self, line):  # find out if the line is solid or assort code (or at least which is most likely. Assume img processing went well
         """Important notice: The assort code can also contain double 0, so need to also use length to check
@@ -1723,6 +1853,7 @@ class matcher():
         # testing sequence: Itemcode, Solid/assort code, Text description.
         # intialize the lists for result collection:
         asn = self.asn
+        skip_segmentation = False
         result_list = []
         for k in range(0, len(text_lines)):
             result_list.append([False, False, False])
@@ -1746,7 +1877,7 @@ class matcher():
                 if len(asn[element_no][1]) == 0 or len(text_lines[index]) == 0:
                     dist_ic = 999
 
-                checking_sa = text_lines[index].replace("-", "")
+                checking_sa = text_lines[index]
                 dist_sa = 1.0 * WagnerFischer(checking_sa, asn[element_no][2], deletion=DELETIONSMATCHER).cost/max(len(asn[element_no][2]), 1)
                 # dist_sa = 1.0*Levenshtein.distance(checking_sa, asn[element_no][2])/max(len(asn[element_no][2]), 1)
                 if len(asn[element_no][2]) == 0 or len(text_lines[index]) == 0:
@@ -1849,9 +1980,19 @@ class matcher():
         if type(ind_dictionary['Text description']) is bool:
             final_ind_dict['Text description'] = False
 
+        if min_dist_sa == 0.0:
+            print "Perfect on S/A!"
+            skip_segmentation = True
+            final_ind_dict['Solidcode'] = result_list_dict['Solidcode']
+
         print final_ind_dict
 
         itemcode_values, itemcode_indeces = self.itemcodeFinder(text_lines, final_ind_dict)  # forward this later!
+
+        if skip_segmentation:
+            solidassort_indeces = self.solidassortFinderPerfect(text_lines, final_ind_dict)
+        else:
+            solidassort_indeces = self.solidassortFinder(text_lines, final_ind_dict, itemcode_indeces)
 
         unique_ic = True
         itemcode_check_uniques = itemcode_values
@@ -1863,7 +2004,7 @@ class matcher():
                 unique_ic = False
         # print "Remember to forward this output to the next step ! "
 
-        return final_ind_dict, text_lines, itemcode_indeces, unique_ic
+        return final_ind_dict, text_lines, itemcode_indeces, unique_ic, skip_segmentation, solidassort_indeces
 
 
 class charextractor():
@@ -1895,6 +2036,7 @@ class charextractor():
 
     def extractAssort(self):
         pass
+
 
 class outputInterpreter():
 
