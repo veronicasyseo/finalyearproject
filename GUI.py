@@ -18,6 +18,7 @@ import re
 import collections
 import pprint
 import os
+import pickle
 
 
 class simpleapp_tk(Tkinter.Tk):
@@ -72,7 +73,7 @@ class simpleapp_tk(Tkinter.Tk):
         self.label4.grid(column=0, row=2)
 
         # dropdown menu for selecting image processing procedure
-        optionList = ["Hybrid", "Adaptive Thresholding", "AccItemCTest", "AdaptiveParameterExperiment", "HybridItemCTest", "AdaptiveWholeBoxTest", "Advanced", "Basic", "ContourGaussianKernelOtsu", "GaussianKernelAndOtsu", "Otsu"]  # add more later
+        optionList = ["Hybrid", "Adaptive Thresholding", "AccItemCTest", "AdaptiveParameterExperiment", "HybridItemCTest", "AdaptiveWholeBoxTest", "ReprocessSA", "Advanced", "Basic", "ContourGaussianKernelOtsu", "GaussianKernelAndOtsu", "Otsu"]  # add more later
         self.dropVar = Tkinter.StringVar()
         self.dropVar.set("Hybrid")  # default
         self.dropMenu1 = Tkinter.OptionMenu(self, self.dropVar, *optionList, command=self.func)
@@ -258,73 +259,86 @@ class simpleapp_tk(Tkinter.Tk):
                 print "Please load ASN before doing accuracy tests m8"
 
         elif self.method in "AdaptiveParameterExperiment":
-            offset_values = [0, 10, 20, 30, 40, 50, 60]
-            block_size_values = [41, 81, 121, 161]
+            offset_values = [8, 10, 12]
+            block_size_values = [161]
+            area_threshold_values = [300, 350, 400, 450, 500]
             if self.ASN_loaded:
                 directory = askdirectory() # only ask once
 
                 for bs_val in block_size_values:
                     for os_val in offset_values:
-                        count_attempts = 0
-                        count_correct = 0
-                        count_correct_not_unique = 0
-                        errors = []
-                        not_unique_but_correct = []
+                        for area_val in area_threshold_values:
+                            time_begin = time.clock()
+                            count_attempts = 0
+                            count_correct = 0
+                            count_correct_not_unique = 0
+                            errors = []
+                            not_unique_but_correct = []
 
-                        for filename in os.listdir(directory):
-                            if filename.endswith(".JPG"):
-                                count_attempts += 1
-                                # img_read = cv2.imread(os.path.join(directory,filename))
-                                processor = img_processor(os.path.join(directory, filename))
-                                text, boxes, img = processor.AdaptiveThresholdingExperiment(bs_val, os_val)
+                            for filename in os.listdir(directory):
+                                if filename.endswith(".JPG"):
+                                    count_attempts += 1
+                                    # img_read = cv2.imread(os.path.join(directory,filename))
+                                    processor = img_processor(os.path.join(directory, filename))
+                                    text, boxes, img = processor.AdaptiveThresholdingExperiment(bs_val, os_val, area_val)
 
-                                interpreter = outputInterpreter()
-                                text, categories = interpreter.categorizeLines(text)
-                                categories, text, itemcode_indeces, unique_ic, skip_segmentation, solidassort_indeces = self.match_instance.checker(text,
-                                                                                                            categories)  # need to add accuracy check
-                                correct_index = self.match_instance.correctFinder(filename)
-                                # print itemcode_indeces
-                                # print "Correct index: " + str(correct_index)
-                                if (correct_index in itemcode_indeces) and unique_ic:
-                                    count_correct += 1
-                                elif (correct_index in itemcode_indeces) and not unique_ic:
-                                    count_correct_not_unique += 1
-                                    not_unique_but_correct.append(filename)
-                                else:
-                                    errors.append(filename)
-                                print "Categories: "
-                                print categories
-                                print "Text: "
-                                print text
-                            print "Images processed: " + str(count_attempts)
-                            print "Correctly determined the itemcode: " + str(count_correct)
-                        print "Line level accuracy solid code: " + str(100.0 * count_correct / count_attempts)
-                        print "Overall, the number of ICs that were not uniquely determined was: " + str(
-                            count_correct_not_unique)
-                        print "This was applicable to the following images: "
-                        print not_unique_but_correct
-                        print "May want to look into the following files: "
-                        print errors
+                                    interpreter = outputInterpreter()
+                                    text, categories = interpreter.categorizeLines(text)
+                                    categories, text, itemcode_indeces, unique_ic, skip_segmentation, solidassort_indeces = self.match_instance.checker(text,
+                                                                                                                categories)  # need to add accuracy check
+                                    correct_index = self.match_instance.correctFinder(filename)
+                                    # print itemcode_indeces
+                                    # print "Correct index: " + str(correct_index)
+                                    if (correct_index in itemcode_indeces) and unique_ic:
+                                        count_correct += 1
+                                    elif (correct_index in itemcode_indeces) and not unique_ic:
+                                        count_correct_not_unique += 1
+                                        not_unique_but_correct.append(filename)
+                                    else:
+                                        errors.append(filename)
+                                    print "Categories: "
+                                    print categories
+                                    print "Text: "
+                                    print text
+                                print "Images processed: " + str(count_attempts)
+                                print "Correctly determined the itemcode: " + str(count_correct)
+                            print "Line level accuracy solid code: " + str(100.0 * count_correct / count_attempts)
+                            print "Overall, the number of ICs that were not uniquely determined was: " + str(
+                                count_correct_not_unique)
+                            print "This was applicable to the following images: "
+                            print not_unique_but_correct
+                            print "May want to look into the following files: "
+                            print errors
+                            time_end = time.clock()
+                            time_taken = time_begin - time_end
 
-                        # collecting the results:
-                        with open("output.txt", "a") as outputfile:
-                            outputfile.write("Overall correct: " + str(count_correct))
-                            outputfile.write("\n")
-                            outputfile.write("Overall correct but not unique: " + str(count_correct_not_unique))
-                            outputfile.write("\n")
-                            outputfile.write("Value for block size " + str(bs_val))
-                            outputfile.write("\n")
-                            outputfile.write("Value for offset: " + str(os_val))
-                            outputfile.write("\n")
-                            outputfile.write("Number of images read: " + str(count_attempts))
-                            outputfile.write("\n")
-                            outputfile.write("Accuracy in %: " + str(100.0*count_correct / count_attempts))
-                            outputfile.write("\n")
-                            outputfile.write("Not unique but correct: ")
-                            outputfile.writelines(not_unique_but_correct)
-                            outputfile.write("\n")
-                            outputfile.write("Errors: ")
-                            outputfile.writelines(errors)
+                            # collecting the results:
+                            with open("output.txt", "a") as outputfile:
+                                outputfile.write("Overall correct: " + str(count_correct))
+                                outputfile.write("\n")
+                                outputfile.write("Overall correct but not unique: " + str(count_correct_not_unique))
+                                outputfile.write("\n")
+                                outputfile.write("Value for block size " + str(bs_val))
+                                outputfile.write("\n")
+                                outputfile.write("Value for offset: " + str(os_val))
+                                outputfile.write("\n")
+                                outputfile.write("Number of images read: " + str(count_attempts))
+                                outputfile.write("\n")
+                                outputfile.write("Accuracy in %: " + str(100.0*count_correct / count_attempts))
+                                outputfile.write("\n")
+                                outputfile.write("Time taken: " + str(time_taken))
+                                outputfile.write("\n")
+                                outputfile.write("Not unique but correct: ")
+                                outputfile.writelines(not_unique_but_correct)
+                                outputfile.write("\n")
+                                outputfile.write("Errors: ")
+                                outputfile.writelines(errors)
+
+                            pickle_name = "errors_" + str(bs_val) + "_" + str(os_val) + "_" + str(area_val)
+
+                            with open(os.path.join(os.curdir, pickle_name + ".pickle"), "wb") as f:
+                                pickle.dump(errors, f)
+                                f.close()
 
                 else:
                     print "Please load ASN before doing accuracy tests m8"
@@ -426,6 +440,32 @@ class simpleapp_tk(Tkinter.Tk):
                 print "Solidassort accuracy" + str(1.0*count_correct_sa/count_attempts)
                 print "Got these wrong:"
                 print errors
+
+        elif self.method in "ReprocessSA":
+            text, boxes, img = processor.AdaptiveThresholding()
+            img_pic = Image.fromarray(img)
+            self.DisplayProcessed(img_pic.resize((self.width, self.height), Image.ANTIALIAS))
+            self.DisplayOCRText(text)
+            interpreter = outputInterpreter()
+            text, categories = interpreter.categorizeLines(text)
+
+            if self.ASN_loaded:
+                categories, text, itemcode_indeces, unique_ic, skip_segmentation, solidassort_indeces = self.match_instance.checker(text, categories)
+                # next, want to extract the S/A code and reprocess it, with a smaller whitelist
+                # have boxes from above, and have img still
+                solidassort_line_no = int(categories['Solidcode'])
+                coordinates = boxes[solidassort_line_no]
+
+                x_top_left = 0
+                y_top_left = coordinates[1]
+                x_bottom_right = img.shape[1]  # assuming x,y are reversed (order) by cv2 image reader.
+                y_bottom_right = coordinates[3]
+
+                img = cv2.imread(self.filename)
+                img_snipped = img[y_top_left:y_bottom_right, x_top_left:x_bottom_right]
+                    # img[x_top_left:x_bottom_right, y_top_left:y_bottom_right]
+                Image.fromarray(img_snipped).show()  # then pass it on 
+                Image.fromarray(img_snipped).save("solidslice.png")
         else:
             print "Method selection error!"
 
@@ -828,15 +868,15 @@ class img_processor():
 
         return text_ret, boxes, img_ret
 
-    def AdaptiveThresholdingExperiment(self, block_size, offset):
+    def AdaptiveThresholdingExperiment(self, block_size, offset, area_lower_bound):
         img_read = cv2.imread(self.filename)
-        area_lower_bound = 200  # originally 300
 
         grayscale = cv2.cvtColor(img_read,
                                  cv2.COLOR_BGR2GRAY)  # potential improvement: using multiple color channels and combining results
 
         block_size = block_size
         offset = offset
+        area_lower_bound = area_lower_bound
         binar_adaptive = threshold_adaptive(grayscale, block_size, offset=offset)
 
         # next, do noise removal
@@ -864,13 +904,13 @@ class img_processor():
 
     def AdaptiveThresholding(self):
         img_read = cv2.imread(self.filename)
-        area_lower_bound = 200  # originally 300
+        area_lower_bound = 400  # originally 300..and 200. Now changed to 400 (17 Mar 2017)
 
         grayscale = cv2.cvtColor(img_read,
                                  cv2.COLOR_BGR2GRAY)  # potential improvement: using multiple color channels and combining results
 
-        block_size = 121
-        binar_adaptive = threshold_adaptive(grayscale, block_size, offset=24)
+        block_size = 161  # originally 121, 161 from 17 Mar 2017
+        binar_adaptive = threshold_adaptive(grayscale, block_size, offset=10)  # offset originally 24, changed to 10 on 17 Mar 2017
 
         # next, do noise removal
         noisy = binar_adaptive.astype('uint8') * 255
