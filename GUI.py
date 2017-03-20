@@ -103,7 +103,7 @@ class simpleapp_tk(Tkinter.Tk):
 
         self.label1.config(image=img2)
         self.label1.image = img2
-        processor = img_processor(self.filename)
+        processor = img_processor(self.filename)  # need to pass on filename
         if self.method in "Basic":
             text, img = processor.Benchmark()  # will later update to use the method chosen in drop-down menu
             self.DisplayProcessed(img.resize((self.width, self.height), Image.ANTIALIAS))
@@ -456,16 +456,43 @@ class simpleapp_tk(Tkinter.Tk):
                 solidassort_line_no = int(categories['Solidcode'])
                 coordinates = boxes[solidassort_line_no]
 
+                # to implement: better logic for extracting the solid/assorrt code
+                # based on...vertical thickness of lines
+                # position of IC, PCS info, Carton No, text description
+                # handle empty line text outputs (check their bounding boxes on line level, are the vertical heights close to 0? )
+
                 x_top_left = 0
                 y_top_left = coordinates[1]
                 x_bottom_right = img.shape[1]  # assuming x,y are reversed (order) by cv2 image reader.
                 y_bottom_right = coordinates[3]
 
-                img = cv2.imread(self.filename)
-                img_snipped = img[y_top_left:y_bottom_right, x_top_left:x_bottom_right]
-                    # img[x_top_left:x_bottom_right, y_top_left:y_bottom_right]
-                Image.fromarray(img_snipped).show()  # then pass it on 
+                if (y_bottom_right - y_top_left) > (0.60 * (boxes[int(categories['Itemcode'])][3] - boxes[int(categories['Itemcode'])][1])):
+                    pass
+                    # img = cv2.imread(self.filename)
+                    # img_snipped = img[y_top_left:y_bottom_right, x_top_left:x_bottom_right]
+                    # Image.fromarray(img_snipped).show()  # then pass it on
+                    # Image.fromarray(img_snipped).save("solidslice.png")
+                else:
+                    print "Did not extract S/A code since the bounding rect was not found satisfactory"
+                img_rgb = cv2.imread(self.filename)
+                img_snipped = img_rgb[y_top_left:y_bottom_right, x_top_left:x_bottom_right]
+                Image.fromarray(img_snipped).show()  # then pass it on
                 Image.fromarray(img_snipped).save("solidslice.png")
+
+                # try: reprocess with Tesseract the extracted Solid/Assort regions
+                # for now, assume SOLID
+                dimension_y, dimension_x = img.shape
+                print dimension_y
+                print dimension_x
+                # background = np.zeros((dimension_y, dimension_x), dtype='float32')
+                # background[y_top_left:y_bottom_right, x_top_left:x_bottom_right] = img[y_top_left:y_bottom_right, x_top_left:x_bottom_right]
+                img_snipped_binary = img[y_top_left:y_bottom_right, x_top_left:x_bottom_right]  # in numpy array form
+                img_snipped_binary_for_tess = Image.fromarray(img_snipped_binary)
+                img_snipped_binary_for_tess.show()
+                # Image.fromarray(background).show()
+                repro = reprocessor(img_snipped_binary_for_tess)
+                repro.SingleLineTess()
+                print "Ended, awaiting next input"
         else:
             print "Method selection error!"
 
@@ -487,6 +514,22 @@ class simpleapp_tk(Tkinter.Tk):
         if len(candidates) == 0:
             candidates = "No candidates!"
         self.label4.config(text=candidates)
+
+
+class reprocessor():
+    def __init__(self, img):
+        self.img = img # takes a PIL image as input
+
+    def SingleLineTess(self):
+        with PyTessBaseAPI(psm=7) as api:
+            api.SetVariable("tessedit_char_whitelist", "-0123456789")
+            api.SetImage(self.img)
+            text = api.GetUTF8Text()
+            print text
+            text = text.encode("utf-8")  # if want to store it in a txt file
+            print api.AllWordConfidences()
+
+        return text
 
 class img_processor():
     def __init__(self, filename):
@@ -519,7 +562,8 @@ class img_processor():
             for r in iterate_level(iterator, level):
                 boxes.append(r.BoundingBox(level))
             print boxes
-            img_from_tess = img_array
+            img_from_tess = img_array.copy()
+            # img_from_tess = img_array  # use this line if want to have the bounding rectangles
             iterator = api.GetIterator()
             iterator.Begin()
             level = RIL.SYMBOL
