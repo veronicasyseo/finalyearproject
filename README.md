@@ -4,6 +4,8 @@ Six Sigma Green Belt project for X Company
 
 
 ## GUI.py:
+> Update 03/20/2017: Partial implementation of reprocessing for single lines (S/A code).
+
 > Update 03/12/2017: Implemented accuracy test (for the whole box) for boxes with only printed characters. Please use "MasterASN_3" to carry out such tests. Improved output to text files.
 
 > Update 03/11/2017: Exception handling
