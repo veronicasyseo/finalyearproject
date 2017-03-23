@@ -73,7 +73,7 @@ class simpleapp_tk(Tkinter.Tk):
         self.label4.grid(column=0, row=2)
 
         # dropdown menu for selecting image processing procedure
-        optionList = ["Hybrid", "Adaptive Thresholding", "AccItemCTest", "AdaptiveParameterExperiment", "HybridItemCTest", "AdaptiveWholeBoxTest", "ReprocessSA", "Advanced", "Basic", "ContourGaussianKernelOtsu", "GaussianKernelAndOtsu", "Otsu"]  # add more later
+        optionList = ["Hybrid", "Adaptive Thresholding", "WholeBoxReprocessSA", "AccItemCTest", "AdaptiveParameterExperiment", "HybridItemCTest", "AdaptiveWholeBoxTest", "ReprocessSA", "Advanced", "Basic", "ContourGaussianKernelOtsu", "GaussianKernelAndOtsu", "Otsu"]  # add more later
         self.dropVar = Tkinter.StringVar()
         self.dropVar.set("Hybrid")  # default
         self.dropMenu1 = Tkinter.OptionMenu(self, self.dropVar, *optionList, command=self.func)
@@ -361,7 +361,9 @@ class simpleapp_tk(Tkinter.Tk):
                         text, boxes, img = processor.AdaptiveThresholding()
                         interpreter = outputInterpreter()
                         text, categories = interpreter.categorizeLines(text)
-                        categories, text, itemcode_indeces, unique_ic, skip_segmentation, solidassort_indeces = self.match_instance.checker(text, categories)  # need to add accuracy check
+                        #categories, text, itemcode_indeces, unique_ic, skip_segmentation, solidassort_indeces = self.match_instance.checker(text, categories)  # need to add accuracy check
+                        categories, text, itemcode_indeces, unique_ic, skip_segmentation, solidassort_indeces = self.match_instance.checkerNoText(text, categories)
+
                         correct_index = self.match_instance.correctFinder(filename)
                         # print itemcode_indeces
                         # print "Correct index: " + str(correct_index)
@@ -449,6 +451,14 @@ class simpleapp_tk(Tkinter.Tk):
             interpreter = outputInterpreter()
             text, categories = interpreter.categorizeLines(text)
 
+            # analyze the bounding boxes
+            # find the mean and sd of the heights of the lines
+            heights = []
+            for rectangle in boxes:
+                heights.append(rectangle[3]-rectangle[1])  # height of the line
+
+            mean_height, sd_height = cv2.meanStdDev(heights)  # will not be used yet
+
             if self.ASN_loaded:
                 categories, text, itemcode_indeces, unique_ic, skip_segmentation, solidassort_indeces = self.match_instance.checker(text, categories)
                 # next, want to extract the S/A code and reprocess it, with a smaller whitelist
@@ -464,7 +474,26 @@ class simpleapp_tk(Tkinter.Tk):
                 x_top_left = 0
                 y_top_left = coordinates[1]
                 x_bottom_right = img.shape[1]  # assuming x,y are reversed (order) by cv2 image reader.
-                y_bottom_right = coordinates[3]
+                y_bottom_right = coordinates[3] + int(0.01*img.shape[0])  # too much?
+
+                # check: any lines w/ small vertical height near the IC?
+                index_ic = categories['Itemcode']
+                index_sa = categories['Solidcode']
+
+                if type(categories['Itemcode']) is not bool:
+                    ic_height = boxes[categories['Itemcode']][3] - boxes[categories['Itemcode']][1]
+                    height_threshold = int(0.30*ic_height)
+                else:
+                    height_threshold = 20
+
+                if index_sa > index_ic:
+                    for k in range(1, index_sa-index_ic-1):
+                        cur_index = index_sa - k
+                        if boxes[cur_index][3] - boxes[cur_index][1] < height_threshold:
+                            pass
+
+                else:
+                    print "SA above IC is impossible, something has gone wrong upstream!"
 
                 if (y_bottom_right - y_top_left) > (0.60 * (boxes[int(categories['Itemcode'])][3] - boxes[int(categories['Itemcode'])][1])):
                     pass
@@ -475,7 +504,7 @@ class simpleapp_tk(Tkinter.Tk):
                 else:
                     print "Did not extract S/A code since the bounding rect was not found satisfactory"
                 img_rgb = cv2.imread(self.filename)
-                img_snipped = img_rgb[y_top_left:y_bottom_right, x_top_left:x_bottom_right]
+                img_snipped = img_rgb[y_top_left:y_bottom_right, x_top_left:x_bottom_right]  # region may be too small
                 Image.fromarray(img_snipped).show()  # then pass it on
                 Image.fromarray(img_snipped).save("solidslice.png")
 
@@ -493,6 +522,103 @@ class simpleapp_tk(Tkinter.Tk):
                 repro = reprocessor(img_snipped_binary_for_tess)
                 repro.SingleLineTess()
                 print "Ended, awaiting next input"
+
+        elif self.method in "WholeBoxReprocessSA":
+            if self.ASN_loaded:
+                directory = askdirectory()
+
+                count_attempts = 0
+                count_correct_ic = 0
+                count_correct_sa = 0
+                count_correct_box = 0
+                not_unique_but_correct = []
+                errors = []
+                count_correct_not_unique = 0
+
+                for filename in os.listdir(directory):  # note: skip_segmentation's requirement is too strict currently. Try without it at all
+                    if filename.endswith(".JPG"):
+                        if self.match_instance.inPrintedList(filename):  # then do adaptive thresholding
+                            print str(filename)
+                            count_attempts += 1
+                            processor = img_processor(os.path.join(directory, filename))
+                            text, boxes, img = processor.AdaptiveThresholding()
+                            # the following 3 lines are optional - if want to redruce processing time, then cut them out
+                            img_pic = Image.fromarray(img)
+                            self.DisplayProcessed(img_pic.resize((self.width, self.height), Image.ANTIALIAS))
+                            self.DisplayOCRText(text)
+
+                            interpreter = outputInterpreter()
+                            text, categories = interpreter.categorizeLines(text)
+                            categories, text, itemcode_indeces, unique_ic, skip_segmentation, solidassort_indeces = self.match_instance.checker(
+                                text, categories)  # need to add accuracy check
+                            correct_index = self.match_instance.correctFinder(filename)
+
+                            # solidassort_line_no = int(categories['Solidcode'])  # integer conversion can cause trouble of there is no index found for S/A line?
+                            if type(categories['Solidcode']) is not bool:
+                                solidassort_line_no = int(categories['Solidcode'])
+                            else:
+                                solidassort_line_no = 1 + categories['Itemcode']
+                                print "Did not have any OG index for SA line"
+                            coordinates = boxes[solidassort_line_no]
+
+                            x_top_left = 0
+                            y_top_left = coordinates[1]
+                            x_bottom_right = img.shape[1]  # assuming x,y are reversed (order) by cv2 image reader.
+                            y_bottom_right = coordinates[3]
+
+                            if (y_bottom_right - y_top_left) > (
+                                0.60 * (boxes[int(categories['Itemcode'])][3] - boxes[int(categories['Itemcode'])][1])):
+                                pass
+                                # img = cv2.imread(self.filename)
+                                # img_snipped = img[y_top_left:y_bottom_right, x_top_left:x_bottom_right]
+                                # Image.fromarray(img_snipped).show()  # then pass it on
+                                # Image.fromarray(img_snipped).save("solidslice.png")
+                            else:
+                                print "Would not extract S/A code since the bounding rect was not found satisfactory"
+                            img_rgb = cv2.imread(self.filename)
+                            img_snipped = img_rgb[y_top_left:y_bottom_right, x_top_left:x_bottom_right]
+                            # Image.fromarray(img_snipped).show()  # then pass it on
+                            Image.fromarray(img_snipped).save("solidslice.png")
+
+                            img_snipped_binary = img[y_top_left:y_bottom_right,
+                                                                    x_top_left:x_bottom_right]  # in numpy array form
+                            img_snipped_binary_for_tess = Image.fromarray(img_snipped_binary)
+                            # img_snipped_binary_for_tess.show()
+                            repro = reprocessor(img_snipped_binary_for_tess)
+                            text_sa_reprocessed = repro.SingleLineTess()  # text
+
+                            # from here, want to find the best candidate for S/A code based on text_sa_reprocessed~
+                            sa_indeces_reprocessed = self.match_instance.solidAssortReprocessed(text_sa_reprocessed, itemcode_indeces)
+                            solidassort_indeces = sa_indeces_reprocessed  # comment out this line if don't want to use the reprocessed text
+                            # at this point, may have a set of ICs (i.e. not uniquely determined)
+                            if (correct_index in itemcode_indeces) and unique_ic:
+                                count_correct_ic += 1
+                            elif (correct_index in itemcode_indeces) and not unique_ic:
+                                count_correct_not_unique += 1
+                                not_unique_but_correct.append(filename)
+                            else:
+                                pass
+                                # errors.append(filename)
+
+                            if correct_index in solidassort_indeces:
+                                count_correct_sa += 1
+                            # the below may not be rigorous enough if have several candidates for SKU
+                            if (correct_index in itemcode_indeces) and (correct_index in solidassort_indeces):
+                                count_correct_box += 1
+                                print "Found the box! To see if uniquely determined, need to do further checks! "
+                            else:
+                                errors.append(filename)
+
+                            print "Results so far: "
+                            print "Overall accuracy" + str(1.0*count_correct_box/count_attempts)
+                            print "Tried " + str(count_attempts) + " boxes so far!"
+
+                # print results:
+                print "Overall accuracy: " + str(1.0*count_correct_box/count_attempts)
+                print "Itemcode accuracy: " + str(1.0*count_correct_ic/count_attempts)
+                print "Solidassort accuracy" + str(1.0*count_correct_sa/count_attempts)
+                print "Got these wrong:"
+                print errors
         else:
             print "Method selection error!"
 
@@ -521,8 +647,8 @@ class reprocessor():
         self.img = img # takes a PIL image as input
 
     def SingleLineTess(self):
-        with PyTessBaseAPI(psm=7) as api:
-            api.SetVariable("tessedit_char_whitelist", "-0123456789")
+        with PyTessBaseAPI(psm=8) as api: # 7 may also work. Try 8 also?
+            api.SetVariable("tessedit_char_whitelist", "-0123456789IF")  # ABCDEFGHIJKLMNOPQRSTUVWXYZ
             api.SetImage(self.img)
             text = api.GetUTF8Text()
             print text
@@ -547,7 +673,7 @@ class img_processor():
 
     def Basic(self, thresholded, img_array):  # for the purpose of debugging, will also draw the bounding rectangles for where tesseract thinks there are characters
         load_time = time.clock()
-        with PyTessBaseAPI(psm=6) as api:
+        with PyTessBaseAPI(psm=6) as api: # originally psm 6. Tried psm=4 without too good results.
             api.SetVariable("tessedit_char_whitelist", "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0987654321-.:/()")
             api.SetImage(thresholded)
             text_output = api.GetUTF8Text().encode('utf-8')
@@ -1622,6 +1748,32 @@ class matcher():
 
         return itemcode_cand_values, itemcode_cand_indeces
 
+    def itemcodeFinderNoText(self, text_lines, categories):
+        """Does not allow the text description to be used to identify the item code!
+        Returns empty lists if no line identfied as the IC"""
+        asn = self.asn
+
+        itemcode_cand_indeces = []
+        candidate_values = []
+        if type(categories['Itemcode']) is not bool:
+            itemcode_raw = text_lines[categories['Itemcode']]
+            min_lev_item = 1000
+
+            for index in range(0, len(asn)):
+                dist_ic = Levenshtein.distance(itemcode_raw, asn[index][1])
+
+                if dist_ic < min_lev_item:
+                    min_lev_item = dist_ic
+                    itemcode_cand_indeces = []
+                    itemcode_cand_indeces.append(index)
+                    candidate_values = []
+                    candidate_values.append(asn[index][1])
+                elif dist_ic == min_lev_item:
+                    itemcode_cand_indeces.append(index)
+                    candidate_values.append(asn[index][1])
+
+        return candidate_values, itemcode_cand_indeces
+
     def itemcodeFinder(self, text_lines, categories):
         """Returns the best guess(es) for the value of the item code, based on the ASN and the categorized lines dictionary
         Need to consider 4 cases: (0,0), (0,1) (1,0) and (1,1) where 0 is no, 1 is yes to the question if we have
@@ -1741,6 +1893,23 @@ class matcher():
                     min_indeces.append(k)
                 elif WagnerFischer(solidassort, asn[k][3], deletion=DELETIONNOCOST).cost == min_dist:
                     min_indeces.append(k)
+
+        return min_indeces
+
+    def solidAssortReprocessed(self, text_line, itemcode_indeces):
+        asn = self.asn
+        line = text_line.replace(" ", "")
+        min_dist = 10000
+        min_indeces = []
+        itemcode_indeces = itemcode_indeces
+
+        for k in itemcode_indeces:
+            if WagnerFischer(line, asn[k][3], deletion=DELETIONNOCOST).cost < min_dist:
+                min_dist = WagnerFischer(line, asn[k][3], deletion=DELETIONNOCOST).cost
+                min_indeces = []
+                min_indeces.append(k)
+            elif WagnerFischer(line, asn[k][3], deletion=DELETIONNOCOST).cost == min_dist:
+                min_indeces.append(k)
 
         return min_indeces
 
@@ -1932,6 +2101,165 @@ class matcher():
         # To-Do: avoid inconsistencies and duplicates
         self.itemcodeFinder(text_lines, final_ind_dict)
         return final_ind_dict, text_lines
+
+    def checkerNoText(self, text_lines, ind_dictionary):
+        # testing sequence: Itemcode, Solid/assort code, Text description.
+        # intialize the lists for result collection:
+        asn = self.asn
+        skip_segmentation = False
+        result_list = []
+        for k in range(0, len(text_lines)):
+            result_list.append([False, False, False])
+
+        dist_threshold = 0.30
+
+        # test the lines against ASN, not concerned about the values of the best matches yet, just want to confirm line types
+        for index in range(0, len(
+                text_lines)):  # do a loophole to find the substitution-based score..may lead to negative values???
+            cur_min_ic = 1000
+            cur_min_sa = 1000
+            cur_min_td = 1000
+            for element_no in range(1, len(asn)):
+
+                dist_ic = 1.0 * WagnerFischer(text_lines[index], asn[element_no][1],
+                                              deletion=DELETIONSMATCHER).cost / max(len(asn[element_no][1]), 1)
+                # dist_ic = 1.0*Levenshtein.distance(text_lines[index], asn[element_no][1])/max(len(asn[element_no][1]), 1)
+                if len(asn[element_no][1]) == 0 or len(text_lines[index]) == 0:
+                    dist_ic = 999
+
+                checking_sa = text_lines[index]
+                dist_sa = 1.0 * WagnerFischer(checking_sa, asn[element_no][2], deletion=DELETIONSMATCHER).cost / max(
+                    len(asn[element_no][2]), 1)
+                # dist_sa = 1.0*Levenshtein.distance(checking_sa, asn[element_no][2])/max(len(asn[element_no][2]), 1)
+                if len(asn[element_no][2]) == 0 or len(text_lines[index]) == 0:
+                    dist_sa = 999
+
+                dist_td = 1.0 * WagnerFischer(text_lines[index], asn[element_no][0],
+                                              deletion=DELETIONSMATCHER).cost / max(len(asn[element_no][0]), 1)
+                # dist_td = 1.0*Levenshtein.distance(text_lines[index], asn[element_no][0])/max(len(asn[element_no][0]), 1)
+                if len(asn[element_no][0]) == 0 or len(text_lines[index]) == 0:
+                    dist_td = 999
+
+                if dist_ic < cur_min_ic:
+                    result_list[index][0] = dist_ic
+                    cur_min_ic = dist_ic
+                if dist_sa < cur_min_sa:
+                    result_list[index][1] = dist_sa
+                    cur_min_sa = dist_sa
+                if dist_td < cur_min_td:
+                    cur_min_td = dist_td
+                    result_list[index][2] = dist_td
+
+        print result_list
+
+        # process result_list to make a dictionary the indeces of useful lines
+        result_list_dict = {'Itemcode': False, 'Solidcode': False, 'Text description': False}
+
+        min_dist_ic = 1000
+        min_dist_sa = 1000
+        min_dist_td = 1000
+
+        index_ic = False
+        index_sa = False
+        index_td = False
+        # find the best scorers (based on ASN) for each category
+        for x in range(0, len(result_list)):  # if tied, go by index heuristics
+
+            if result_list[x][0] < min_dist_ic:
+                min_dist_ic = result_list[x][0]
+                index_ic = x
+            if result_list[x][1] < min_dist_sa:
+                min_dist_sa = result_list[x][1]
+                index_sa = x
+            if result_list[x][2] < min_dist_td:
+                min_dist_td = result_list[x][2]
+                index_td = x
+
+        if index_ic == index_td:
+            index_td = False
+
+        if index_ic == index_sa:
+            index_sa = False
+
+        result_list_dict['Itemcode'] = index_ic
+        result_list_dict['Solidcode'] = index_sa
+        result_list_dict['Text description'] = index_td
+
+        # compare the results to the conclusions reached by the outputInterpreter(). Compare result_list and ind_dictionary
+        ind_dictionary = ind_dictionary
+        final_ind_dict = {'Itemcode': False, 'Solidcode': False, 'Text description': False}
+
+        if type(ind_dictionary['Itemcode']) is bool and type(result_list_dict['Itemcode']) is bool:
+            final_ind_dict['Itemcode'] = False
+        elif type(ind_dictionary['Itemcode']) is bool and type(result_list_dict['Itemcode']) is not bool:
+            final_ind_dict['Itemcode'] = result_list_dict['Itemcode']
+        elif type(ind_dictionary['Itemcode']) is not bool and type(result_list_dict['Itemcode']) is bool:
+            final_ind_dict['Itemcode'] = ind_dictionary['Itemcode']
+        else:
+            final_ind_dict['Itemcode'] = min(ind_dictionary['Itemcode'], result_list_dict['Itemcode'])
+
+        if type(ind_dictionary['Solidcode']) is bool and type(result_list_dict['Solidcode']) is bool:
+            final_ind_dict['Solidcode'] = False
+        elif type(ind_dictionary['Solidcode']) is bool and type(result_list_dict['Solidcode']) is not bool:
+            final_ind_dict['Solidcode'] = result_list_dict['Solidcode']
+        elif type(ind_dictionary['Solidcode']) is not bool and type(result_list_dict['Solidcode']) is bool:
+            final_ind_dict['Solidcode'] = ind_dictionary['Solidcode']
+        else:
+            final_ind_dict['Solidcode'] = min(ind_dictionary['Solidcode'], result_list_dict['Solidcode'])
+
+        if type(ind_dictionary['Text description']) is bool and type(result_list_dict['Text description']) is bool:
+            final_ind_dict['Text description'] = False
+        elif type(ind_dictionary['Text description']) is bool and type(
+                result_list_dict['Text description']) is not bool:
+            final_ind_dict['Text description'] = result_list_dict['Text description']
+        elif type(ind_dictionary['Text description']) is not bool and type(
+                result_list_dict['Text description']) is bool:
+            final_ind_dict['Text description'] = ind_dictionary['Text description']
+        else:
+            final_ind_dict['Text description'] = min(ind_dictionary['Text description'],
+                                                     result_list_dict['Text description'])
+
+        print ind_dictionary
+        print result_list_dict
+        print final_ind_dict
+
+        if min_dist_ic < dist_threshold:
+            final_ind_dict['Itemcode'] = result_list_dict['Itemcode']
+
+        if min_dist_sa < dist_threshold:
+            final_ind_dict['Solidcode'] = result_list_dict['Solidcode']
+
+        if min_dist_td < dist_threshold:
+            final_ind_dict['Text description'] = result_list_dict['Text description']
+
+        if type(ind_dictionary['Text description']) is bool:
+            final_ind_dict['Text description'] = False
+
+        if min_dist_sa == 0.0:
+            print "Perfect on S/A!"
+            skip_segmentation = True
+            final_ind_dict['Solidcode'] = result_list_dict['Solidcode']
+
+        print final_ind_dict
+
+        itemcode_values, itemcode_indeces = self.itemcodeFinderNoText(text_lines, final_ind_dict)  # forward this later!
+
+        if skip_segmentation:
+            solidassort_indeces = self.solidassortFinderPerfect(text_lines, final_ind_dict)
+        else:
+            solidassort_indeces = self.solidassortFinder(text_lines, final_ind_dict, itemcode_indeces)
+
+        unique_ic = True
+        itemcode_check_uniques = itemcode_values
+        # check if the item code values are unique.
+        while len(itemcode_check_uniques) > 1:
+            element = itemcode_check_uniques.pop()
+            if element not in itemcode_check_uniques:
+                print "Not unique item code! "
+                unique_ic = False
+        # print "Remember to forward this output to the next step ! "
+
+        return final_ind_dict, text_lines, itemcode_indeces, unique_ic, skip_segmentation, solidassort_indeces
 
     def checker(self, text_lines, ind_dictionary):
         # testing sequence: Itemcode, Solid/assort code, Text description.
