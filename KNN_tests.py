@@ -10,7 +10,7 @@ import os
 
 # get new data
 # directory = askdirectory()
-directory = "/Users/sigurdandersberg/PycharmProjects/proj1/KNN_work/Pickles"
+directory = "path"
 
 for filename in os.listdir(directory):
     if filename.endswith(".pickle"):  # check if is pickle or not
@@ -27,7 +27,7 @@ for filename in os.listdir(directory):
         train_labels = np.asarray(train_labels)
         train_labels = train_labels.astype(np.float32)
 
-        knn_model_old = "/Users/sigurdandersberg/PycharmProjects/proj1/KNN_work/knn_data.npz"  # insert path here
+        knn_model_old = "path to KNN model"  # insert path here
         # obtain the old data
         with np.load(knn_model_old) as data:
             print data.files  # list the files stored
@@ -46,7 +46,7 @@ for filename in os.listdir(directory):
         knn.train(train_imgs, cv2.ml.ROW_SAMPLE, train_labels)  # need to get correct input...
 
         # test the accuracy
-        test_file = "/Users/sigurdandersberg/PycharmProjects/proj1/KNN_work/SD19_28x28_60000.pickle"
+        test_file = "path to testing data"
 
         test_data = pickle.load(open(test_file))
 
@@ -92,4 +92,4 @@ for filename in os.listdir(directory):
         # Save the data
         train_imgs = train_imgs.astype(np.uint8)  # convert to take up less memory
         train_labels = train_labels.astype(np.uint8)  # convert back to float32 upon loading
-        np.savez('knn_data.npz', train=train_imgs, train_labels=train_labels)
+        np.savez('knn_data.npz', train=train_imgs, train_labels=train_labels)  # make sure save path is correct
