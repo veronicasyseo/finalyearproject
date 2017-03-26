@@ -88,8 +88,17 @@ for filename in os.listdir(directory):
                     accuracies[cur_int][1] += 1
 
             print accuracies
+            
+            with open("output_knn.txt", "a") as outputfile: 
+                outputfile.write("Number of training data: " + str(len(train_labels)))
+                outputfile.write("\n")
+                outputfile.write("Value of K: " + str(k_val))
+                outputfile.write("\n")
+                outputfile.write("Accuracy: " + str(accuracy))
+                outputfile.writelines(accuracies)
+                outputfile.write("\n")
 
-        # Save the data
-        train_imgs = train_imgs.astype(np.uint8)  # convert to take up less memory
-        train_labels = train_labels.astype(np.uint8)  # convert back to float32 upon loading
-        np.savez('knn_data.npz', train=train_imgs, train_labels=train_labels)  # make sure save path is correct
+            # Save the data
+            train_imgs = train_imgs.astype(np.uint8)  # convert to take up less memory
+            train_labels = train_labels.astype(np.uint8)  # convert back to float32 upon loading
+            np.savez('knn_data.npz', train=train_imgs, train_labels=train_labels)  # make sure save path is correct
