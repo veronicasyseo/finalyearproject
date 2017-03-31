@@ -27,6 +27,8 @@ Six Sigma Green Belt project for X Company
 Simple GUI, making it more convenient to test our program on sample images.
 Uses Tkinter, so it should run on both Mac and Windows.
 
+## Segmentation.py: 
+Takes a binary image of a single line (solid or assort), and carries out segmentation of touching characters. Is still work in progress. Based on a paper by Fujisawa et al.
 
 ## Adaptive_thresholding.py: 
 A less computationally expensive approach than hybrid.py. Apart from using skimage's adaptive thresholding method, contour analysis is used to filter out any noise left after thresholding.
