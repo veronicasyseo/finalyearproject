@@ -28,6 +28,8 @@ Simple GUI, making it more convenient to test our program on sample images.
 Uses Tkinter, so it should run on both Mac and Windows.
 
 ## Segmentation.py: 
+> Update 04/01/2017: Added KNN classification for all the candidate cuts and the hypothesis that no cuts are needed. Results are surprisingly good. 
+
 Takes a binary image of a single line (solid or assort), and carries out segmentation of touching characters. Is still work in progress. Based on a paper by Fujisawa et al.
 
 ## Adaptive_thresholding.py: 
