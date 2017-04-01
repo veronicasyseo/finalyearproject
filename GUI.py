@@ -73,7 +73,7 @@ class simpleapp_tk(Tkinter.Tk):
         self.label4.grid(column=0, row=2)
 
         # dropdown menu for selecting image processing procedure
-        optionList = ["Hybrid", "Adaptive Thresholding", "WholeBoxReprocessSA", "AccItemCTest", "AdaptiveParameterExperiment", "HybridItemCTest", "AdaptiveWholeBoxTest", "ReprocessSA", "Advanced", "Basic", "ContourGaussianKernelOtsu", "GaussianKernelAndOtsu", "Otsu"]  # add more later
+        optionList = ["Hybrid", "Adaptive Thresholding", "WholeBoxReprocessSA", "cv2AdaptiveMean", "cv2AdaptiveGaussian", "AccItemCTest", "AdaptiveParameterExperiment", "HybridItemCTest", "AdaptiveWholeBoxTest", "ReprocessSA", "Advanced", "Basic", "ContourGaussianKernelOtsu", "GaussianKernelAndOtsu", "Otsu"]  # add more later
         self.dropVar = Tkinter.StringVar()
         self.dropVar.set("Hybrid")  # default
         self.dropMenu1 = Tkinter.OptionMenu(self, self.dropVar, *optionList, command=self.func)
@@ -130,7 +130,7 @@ class simpleapp_tk(Tkinter.Tk):
             self.DisplayOCRText(text)
 
         elif self.method in "Hybrid":
-            img, text, boxes = processor.Hybrid()  # and what to do about the iterator?
+            text, boxes, img = processor.Hybrid()  # and what to do about the iterator?
             img_pic = Image.fromarray(img)
             self.DisplayProcessed(img_pic.resize((self.width, self.height), Image.ANTIALIAS))
             self.DisplayOCRText(text)
@@ -457,14 +457,31 @@ class simpleapp_tk(Tkinter.Tk):
             for rectangle in boxes:
                 heights.append(rectangle[3]-rectangle[1])  # height of the line
 
-            mean_height, sd_height = cv2.meanStdDev(heights)  # will not be used yet
+            heights = np.asarray(heights)
+            # mean_height, sd_height = cv2.meanStdDev(heights)  # will not be used yet
 
             if self.ASN_loaded:
-                categories, text, itemcode_indeces, unique_ic, skip_segmentation, solidassort_indeces = self.match_instance.checker(text, categories)
+                #categories, text, itemcode_indeces, unique_ic, skip_segmentation, solidassort_indeces = self.match_instance.checker(text, categories)
+                categories, text, itemcode_indeces, unique_ic, skip_segmentation, solidassort_indeces = self.match_instance.checkerNoText(text, categories)
                 # next, want to extract the S/A code and reprocess it, with a smaller whitelist
                 # have boxes from above, and have img still
-                solidassort_line_no = int(categories['Solidcode'])
-                coordinates = boxes[solidassort_line_no]
+                index_ic = categories['Itemcode']
+                index_sa = categories['Solidcode']
+
+                # need to make adjustments, taking blank text lines into account and their missing bounding rectangles.
+                index_sa_adjusted = index_sa
+                sa_adjustment = 0
+                for x in xrange(0, index_sa):
+                    line_before = text[x].replace("\n", "")
+                    if len(line_before) == 0:
+                        sa_adjustment += 1
+
+                index_sa_adjusted = index_sa - sa_adjustment
+                index_ic_for_comparison = index_ic - sa_adjustment
+
+                index_sa = index_sa_adjusted  # make sure that text is not being accessed after this point!
+
+                coordinates = boxes[index_sa]
 
                 # to implement: better logic for extracting the solid/assorrt code
                 # based on...vertical thickness of lines
@@ -475,10 +492,8 @@ class simpleapp_tk(Tkinter.Tk):
                 y_top_left = coordinates[1]
                 x_bottom_right = img.shape[1]  # assuming x,y are reversed (order) by cv2 image reader.
                 y_bottom_right = coordinates[3] + int(0.01*img.shape[0])  # too much?
-
+                # also needed: improved logic for finding the proper index of SA
                 # check: any lines w/ small vertical height near the IC?
-                index_ic = categories['Itemcode']
-                index_sa = categories['Solidcode']
 
                 if type(categories['Itemcode']) is not bool:
                     ic_height = boxes[categories['Itemcode']][3] - boxes[categories['Itemcode']][1]
@@ -486,25 +501,29 @@ class simpleapp_tk(Tkinter.Tk):
                 else:
                     height_threshold = 20
 
-                if index_sa > index_ic:
-                    for k in range(1, index_sa-index_ic-1):
-                        cur_index = index_sa - k
-                        if boxes[cur_index][3] - boxes[cur_index][1] < height_threshold:
-                            pass
+                if (index_sa - index_ic_for_comparison) > 1:
+                    if (boxes[index_sa - 1][3]-boxes[index_sa - 1][1]) < height_threshold:
+                        y_top_left = boxes[index_sa-1][1]
 
-                else:
-                    print "SA above IC is impossible, something has gone wrong upstream!"
-
-                if (y_bottom_right - y_top_left) > (0.60 * (boxes[int(categories['Itemcode'])][3] - boxes[int(categories['Itemcode'])][1])):
+                        if (index_sa - index_ic_for_comparison) > 2:
+                            if (boxes[index_sa - 2][3] - boxes[index_sa - 2][1]) < height_threshold:
+                                y_top_left = boxes[index_sa-2][1]
+                                if (index_sa - index_ic_for_comparison) > 3:
+                                    if (boxes[index_sa - 3][3] - boxes[index_sa - 3][1]) < height_threshold:
+                                        y_top_left = boxes[index_sa-3][1]
+                elif index_sa - index_ic_for_comparison == 1:  # i.e. directly belwo
                     pass
-                    # img = cv2.imread(self.filename)
-                    # img_snipped = img[y_top_left:y_bottom_right, x_top_left:x_bottom_right]
-                    # Image.fromarray(img_snipped).show()  # then pass it on
-                    # Image.fromarray(img_snipped).save("solidslice.png")
                 else:
-                    print "Did not extract S/A code since the bounding rect was not found satisfactory"
-                img_rgb = cv2.imread(self.filename)
-                img_snipped = img_rgb[y_top_left:y_bottom_right, x_top_left:x_bottom_right]  # region may be too small
+                    print "SA above IC is impossible, something has gone wrong upstream!"  # then what to do in this case?
+                    # could set to IC + 1 by default?
+                    index_sa = index_ic_for_comparison + 1
+                    y_top_left = boxes[index_sa][1]
+                    y_bottom_right = boxes[index_sa][3]
+                    # x-coords should be unaffected
+
+                img_snipped = img[y_top_left:y_bottom_right, x_top_left:x_bottom_right]
+                # img_rgb = cv2.imread(self.filename)
+                # img_snipped = img_rgb[y_top_left:y_bottom_right, x_top_left:x_bottom_right]  # region may be too small
                 Image.fromarray(img_snipped).show()  # then pass it on
                 Image.fromarray(img_snipped).save("solidslice.png")
 
@@ -619,6 +638,12 @@ class simpleapp_tk(Tkinter.Tk):
                 print "Solidassort accuracy" + str(1.0*count_correct_sa/count_attempts)
                 print "Got these wrong:"
                 print errors
+
+        elif self.method in "cv2AdaptiveMean":
+            processor.cv2AdaptiveMean()
+
+        elif self.method in "cv2AdaptiveGaussian":
+            processor.cv2AdaptiveGaussian()
         else:
             print "Method selection error!"
 
@@ -714,12 +739,54 @@ class img_processor():
             return text_output, boxes
             # also return images
 
+    def cv2AdaptiveMean(self):  # may want to apply a blur first?
+        area_threshold = 350
+        img = cv2.imread(self.filename)
+        img_gs = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        binary = cv2.threshold(img_gs, 255, cv2.ADAPTIVE_THRESH_MEAN_C,\
+            cv2.THRESH_BINARY, 161, 10)  # very slow?
+        a, contours, hierarchy = cv2.findContours(binary, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE)
+
+        large_cnt = []
+
+        for cnt in contours:
+            if cv2.contourArea(cnt) > area_threshold:
+                large_cnt.append(cnt)
+
+        black_bg = np.zeros((img.shape[0], img.shape[1]), dtype='uint8')
+        cv2.drawContours(black_bg, large_cnt, -1, color=255, thickness=1)
+        Image.fromarray(black_bg).show()
+        print "cv2AdaptiveMean done!"
+
+        # may want to return something
+
+    def cv2AdaptiveGaussian(self):
+        area_threshold = 350
+        img = cv2.imread(self.filename)
+        img_gs = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+        binary = cv2.adaptiveThreshold(img_gs, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, \
+                                    cv2.THRESH_BINARY, 161, 10)
+        a, contours, hierarchy = cv2.findContours(binary, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE)
+
+        large_cnt = []
+
+        for cnt in contours:
+            if cv2.contourArea(cnt) > area_threshold:
+                large_cnt.append(cnt)
+
+        black_bg = np.zeros((img.shape[0], img.shape[1]), dtype='uint8')
+        cv2.drawContours(black_bg, large_cnt, -1, color=255, thickness=1)
+        Image.fromarray(black_bg).show()
+
+        print "cv2AdaptiveGaussian done!"
+
     def Hybrid(self):
         tic = time.clock()
         img = cv2.imread(self.filename)
         load_time = time.clock()
         print "Load time: " + str(load_time - tic)
-        contour_area_min = 400  # 700 to 800 seem to work well. Was 400
+        contour_area_min = 350  # 700 to 800 seem to work well. Was 400
 
         # next split image into the three RGB channels
         img_red = img[:, :, 0]
@@ -730,7 +797,7 @@ class img_processor():
         # edge_red = feature.canny(img_red)
         # edge_green = feature.canny(img_green)
         # edge_blue = feature.canny(img_blue)
-        edge_red = cv2.Canny(img_red, 50, 100)
+        edge_red = cv2.Canny(img_red, 50, 100)  # originally used thresholds 50, 100 instead of 100, 200
         edge_green = cv2.Canny(img_green, 50, 100)
         edge_blue = cv2.Canny(img_blue, 50, 100)
         # Can try cv2.Canny(image_input, lower, upper) with e.g. lower=100, upper=200
@@ -1074,7 +1141,7 @@ class img_processor():
 
     def AdaptiveThresholding(self):
         img_read = cv2.imread(self.filename)
-        area_lower_bound = 400  # originally 300..and 200. Now changed to 400 (17 Mar 2017)
+        area_lower_bound = 350  # originally 300..and 200. Now changed to 400 (17 Mar 2017). 350 from 24 Mar
 
         grayscale = cv2.cvtColor(img_read,
                                  cv2.COLOR_BGR2GRAY)  # potential improvement: using multiple color channels and combining results
@@ -1337,7 +1404,7 @@ class img_processor():
         return text_output, image_processed
 
     def Otsu(self):
-        """Uses only Otsu's binarization, followed by Tesseract for OCR"""
+        """Uses only Otsu's binarization, followed by Tesseract for OCR. May want to do an updated version with noise removal"""
         # load image
         img_raw = cv2.imread(self.filename)
         img_grey = cv2.cvtColor(img_raw, cv2.COLOR_BGR2GRAY)
