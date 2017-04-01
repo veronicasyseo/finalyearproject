@@ -146,6 +146,25 @@ class PatternComponent():
         self.left_full = []
         self.right_full = []  # may be able to obtain by simply using + operator between lists ("concatinate"). But need to first divide into left and right hand side
         self.symbol_guesses = []
+        self.symbol_distances = []
+
+    def setSymbolDistances(self, dist):
+        if type(min(dist)) is int:
+            self.symbol_distances.append(min(dist))
+        else:
+            self.symbol_distances.append(min(dist)[0
+                                         ])
+    def getSymbolDistances(self):
+        return self.symbol_distances
+
+    def getMinSymbol(self):
+        sym = np.asarray(self.getSymbolGuesses())
+        dis = np.asarray(self.getSymbolDistances())
+
+        # get the index of the minimum distance, then use it to return the best guess symbol
+        min_dist_index = np.argmin(dis)  # assume unique
+        return sym[min_dist_index]
+
 
     def setSymbolGuesses(self, string):
         self.symbol_guesses.append(string)
@@ -736,6 +755,7 @@ if __name__== "__main__":
             print result_c
             print dist
             pc.setSymbolGuesses(str(int(result_c)))
+            pc.setSymbolDistances(dist)
             # should not repeat the above every single time there is a new cut. Rather, do once for each pc
             # for the potentially touching, want to obtain H(x)
             upper = pc.getUpper()
@@ -1033,41 +1053,46 @@ if __name__== "__main__":
 
                 arr_l = np.asarray(padded_l)
                 ready_l = arr_l.reshape(-1, 784).astype('float32')
-                ret, result_l, neighbours, dist = knn_model.findNearest(ready_l, k=3)  # k may need to be changed
+                ret, result_l, neighbours, dist_l = knn_model.findNearest(ready_l, k=3)  # k may need to be changed
                 print "KNN result: "
                 print result_l
-                print dist
+                print dist_l
 
                 arr_r = np.asarray(padded_r)
                 ready_r = arr_r.reshape(-1, 784).astype('float32')
-                ret, result_r, neighbours, dist = knn_model.findNearest(ready_r, k=3)  # k may need to be changed
+                ret, result_r, neighbours, dist_r = knn_model.findNearest(ready_r, k=3)  # k may need to be changed
                 print "KNN result: "
                 print result_r
-                print dist
+                print dist_r
 
                 pc.setSymbolGuesses(str(int(result_l)) + str(int(result_r)))
+                # setting the distances is not straightforward when have two lists of distances
+                # pc.setSymbolDistances([min(dist_l) + min(dist_r)])  # is not int at this point
+                # skip the conversion to integer
+                pc.setSymbolDistances([(min(dist_l) + min(dist_r))/2])
 
         elif pc.getCategory() == 0:  # check if it's a hyphen
             x_min, x_max, y_min, y_max = pc.findBoundingBox(pc.getOuter())
             if cv2.contourArea(pc.getOuter()) > (0.70 * ((x_max-x_min)*(y_max-y_min))):  # then go ahead and assume it's a hyphen
                 pc.setSymbolGuesses("-")  # add hyphen as guess
-            else:  # treat as if no cuts are necessary (no cut hypothesis). Rarely triggered 
+                pc.setSymbolDistances([0, 1])
+            else:  # treat as if no cuts are necessary (no cut hypothesis). Rarely triggered
                 outer = pc.getOuter()
                 inner = pc.getInnerContours()  # may have multiple inner loops - in this case want to combine all of them
-                # handle the different formats of outer, inner 
+                # handle the different formats of outer, inner
                 outer_pts = []
-                for point in outer: 
+                for point in outer:
                     x = point[0]
                     y = point[1]
                     outer_pts.append([x, y])
-                outer = outer_pts 
-                
+                outer = outer_pts
+
                 inner_pts = []
-                for point in inner: 
+                for point in inner:
                     x = point[0]
                     y = point[1]
                     inner_pts.append([x, y])
-                inner = inner_pts 
+                inner = inner_pts
                 # the parts here may also be bugged, see line # 995
 
                 all_pts = outer + inner
@@ -1107,6 +1132,7 @@ if __name__== "__main__":
                 print result_c
                 print dist
                 pc.setSymbolGuesses(str(int(result_c)))
+                pc.setSymbolDistances(dist)
                 # then feed pad_c to KNN
                 # place the segment centered on the black background
                 # lacking: some of the points from the original contour are left out...
@@ -1117,6 +1143,14 @@ if __name__== "__main__":
     for pc in pattern_components:
         # print pc.getCategory()
         print pc.getSymbolGuesses()
+
+    stri = ""
+    for pc in pattern_components:  # want to print the best guess for the value of the line before comparing with ASN
+        stri += str(pc.getMinSymbol())
+
+    print "The best guess is: "
+    print stri
+
 
 
     """Currently, IMG_2377 leads to messed up output: a contour spanning nearly the entire image...
