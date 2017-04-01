@@ -7,6 +7,22 @@ import matplotlib
 matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 
+
+def loadKNN():
+    path = "/Users/sigurdandersberg/PycharmProjects/proj1/knn_data_large.npz"
+    with np.load(path) as data:
+        print data.files # list the files stored
+        train = data['train'].astype(np.float32)
+        train_labels = data['train_labels'].astype(np.float32)
+
+    # do accuracy tests (should give 100%, but do it for sake of testing PT)
+    # Carry out training
+    knn = cv2.ml.KNearest_create()  # check later
+    knn.train(train, cv2.ml.ROW_SAMPLE, train_labels)  # need to get correct input...
+
+    return knn
+
+
 def deskew(img):
     """Deskew digit
 
@@ -129,6 +145,13 @@ class PatternComponent():
         self.right = []
         self.left_full = []
         self.right_full = []  # may be able to obtain by simply using + operator between lists ("concatinate"). But need to first divide into left and right hand side
+        self.symbol_guesses = []
+
+    def setSymbolGuesses(self, string):
+        self.symbol_guesses.append(string)
+
+    def getSymbolGuesses(self):
+        return self.symbol_guesses
 
     def findBoundingBox(self, contour):
         """Returns the corners of the bounding box in form of:
@@ -160,7 +183,7 @@ class PatternComponent():
 
         return x_min, x_max, y_min, y_max
 
-    def getInnerContours(self):
+    def getInnerContours(self):  # can be used to correctly draw the contours. But fails when want to get the points at a later point?
         inner_all = self.getInner()
         inner_contour_points = []
         if len(inner_all) > 0:
@@ -395,7 +418,7 @@ class PatternComponent():
         return outer[:, 1]
 
 if __name__== "__main__":
-    img = cv2.imread(path_to_solidslice, 0)
+    img = cv2.imread("/Users/sigurdandersberg/PycharmProjects/proj1/solidslice.png", 0)
     binary = 255 - img
     black_bg = np.zeros(binary.shape, dtype='uint8')
 
@@ -647,8 +670,73 @@ if __name__== "__main__":
 
     # Image.fromarray(black_rectangle).show()
     h_t = 75  # assumes a constant value for h_t. May be better to choose a dynamic threshold h_t
+
+    knn_model = loadKNN()  # successfully loads
+
     for pc in pattern_components:
         if pc.getCategory() > 0:  # only consider the potentially touching characters
+            # next: the hypothesis that no cuts are appropriate
+            outer = pc.getOuter()  # is a collection of point (desired form)
+            outer_pts = []
+            for point in outer:
+                x = point[0]
+                y = point[1]
+                outer_pts.append([x, y])
+            outer = outer_pts
+            inner = pc.getInnerContours()  # is a collection of arrays (not desired)
+            # inner is a list of arrays, want a list of pts
+            inner_pts = []
+            for element in inner:
+                x = element[0]
+                y = element[1]
+
+                inner_pts.append([x, y])
+
+            inner = inner_pts
+            print "Inner: "
+            print inner
+
+            if len(inner) > 0:
+                all_pts = outer + inner  # at this point, inner should be just a list of points, but it does not appear to hold for the 00 contour.
+            else:
+                all_pts = outer
+            x_min, x_max, y_min, y_max = pc.findBoundingBox(all_pts)
+            new_size = max((x_max - x_min), (y_max - y_min))
+            # may be able to recycle some code here
+
+            segment_c = binary[y_min:y_max, x_min:x_max]
+            black_bg = np.zeros((new_size, new_size), dtype='uint8')
+
+            if segment_c.shape[0] > segment_c.shape[1]:  # if it's taller than it's wide
+                x_min = int(new_size / 2) - int(1.0 * segment_c.shape[1] / 2)
+                x_max = x_min + segment_c.shape[1]
+                black_bg[0:black_bg.shape[0], x_min:x_max] = segment_c
+                char_on_bg_c = black_bg
+            elif segment_c.shape[0] == segment_c.shape[1]:  # just place directly on top.
+                char_on_bg_c = segment_c
+            else:  # if wider than it's tall
+                y_min = int(new_size / 2) - int(1.0 * segment_c.shape[0] / 2)
+                y_max = y_min + segment_c.shape[0]
+                black_bg[y_min:y_max, 0:black_bg.shape[0]] = segment_c
+                char_on_bg_c = black_bg
+
+            dim_temp = 128
+            resized_c = cv2.resize(char_on_bg_c, (dim_temp, dim_temp), cv2.INTER_LINEAR)
+            char_dim = 28
+            deskew_c = deskew(resized_c)
+            trim_c = trim_padding(deskew_c)
+            resized_c = resize_with_constant_ratio(trim_c, char_dim=char_dim)
+            pad_c = pad_digit(resized_c, char_dim=char_dim)
+            Image.fromarray(pad_c).show()
+            # prepare pad_c for KNN
+            arr_c = np.asarray(pad_c)
+            ready_c = arr_c.reshape(-1, 784).astype('float32')
+            ret, result_c, neighbours, dist = knn_model.findNearest(ready_c, k=3)  # k may need to be changed
+            print "Result without cuts: "
+            print result_c
+            print dist
+            pc.setSymbolGuesses(str(int(result_c)))
+            # should not repeat the above every single time there is a new cut. Rather, do once for each pc
             # for the potentially touching, want to obtain H(x)
             upper = pc.getUpper()
             lower = pc.getLower()
@@ -680,7 +768,7 @@ if __name__== "__main__":
 
                 h = abs(y_u - y_l)
                 h_x.append((x, h))
-            print h_x  # currently works as intended
+            # print h_x  # currently works as intended
             x_for_graph = [row[0] for row in h_x]
             y_for_graph = [row[1] for row in h_x]
 
@@ -712,8 +800,8 @@ if __name__== "__main__":
                     cross_points_lower.append(lower[[row[0] for row in lower].index(x)])
                     cross_points_upper.append(upper[[row[0] for row in upper].index(x)])
 
-            print cross_points_lower  # keeps track of all the x-values
-            print cross_points_upper
+            # print cross_points_lower  # keeps track of all the x-values
+            # print cross_points_upper
 
             black_rectangle = np.zeros((img.shape[0], img.shape[1], 3), dtype='uint8')
             black_rectangle = pc.drawUpper(black_rectangle)
@@ -843,7 +931,7 @@ if __name__== "__main__":
                 pc.setLeftRightFull(c_b)
 
                 black_bg = np.zeros((img.shape[0], img.shape[1], 3), dtype='uint8')
-                Image.fromarray(pc.drawLeftRightFull(black_bg)).show()
+                # Image.fromarray(pc.drawLeftRightFull(black_bg)).show()
 
                 # when draw, should take pts from the entire character, not just the upper and lower
                 # also, have some weird cases of green horizontal lines that keep being printed/Drawn
@@ -855,21 +943,213 @@ if __name__== "__main__":
                 # now want to extract the hypothesised characters from each pattern component
                 left_full = pc.getLeftFull()
                 x_min, x_max, y_min, y_max = pc.findBoundingBox(left_full)
-                segment = binary[y_min:y_max, x_min:x_max]
-                # Image.fromarray(segment).show()
+                segment_l = binary[y_min:y_max, x_min:x_max]  # is black on white
+                # segment_l = 255 - segment_l  # should now be white on black
+                # Image.fromarray(segment_l).show()
 
                 right_full = pc.getRightFull()
                 x_min, x_max, y_min, y_max = pc.findBoundingBox(right_full)
-                segment = binary[y_min:y_max, x_min:x_max]
-                # Image.fromarray(segment).show()
+                segment_r = binary[y_min:y_max, x_min:x_max]
+                # segment_r = 255 - segment_r
+                # Image.fromarray(segment_r).show()
 
                 # note: also need to test the possibility that no cuts are appropriate for this pattern component
+                # start extracting the chars: LHS
+                new_size = max(segment_l.shape[0], segment_l.shape[1])  # should still work even after inverting colors of binary segment
+                black_bg = np.zeros((new_size, new_size), dtype='uint8')  # black bg
 
+                if segment_l.shape[0] > segment_l.shape[1]:  # if it's taller than it's wide
+                    x_min = int(new_size/2) - int(1.0*segment_l.shape[1]/2)
+                    x_max = x_min + segment_l.shape[1]
+                    black_bg[0:black_bg.shape[0], x_min:x_max] = segment_l
+                    char_on_bg_l = black_bg
+                elif segment_l.shape[0] == segment_l.shape[1]:  # just place directly on top.
+                    char_on_bg_l = segment_l
+                else:  # if wider than it's tall
+                    y_min = int(new_size/2) - int(1.0*segment_l.shape[0]/2)
+                    y_max = y_min + segment_l.shape[0]
+                    black_bg[y_min:y_max, 0:black_bg.shape[0]] = segment_l
+                    char_on_bg_l = black_bg
+
+                # Now do RHS:
+                new_size = max(segment_r.shape[0], segment_r.shape[
+                    1])  # should still work even after inverting colors of binary segment
+                black_bg = np.zeros((new_size, new_size), dtype='uint8')  # black bg
+
+                if segment_r.shape[0] > segment_r.shape[1]:  # if it's taller than it's wide
+                    x_min = int(new_size / 2) - int(1.0 * segment_r.shape[1] / 2)
+                    x_max = x_min + segment_r.shape[1]
+                    black_bg[0:black_bg.shape[0], x_min:x_max] = segment_r
+                    char_on_bg_r = black_bg
+                elif segment_r.shape[0] == segment_r.shape[1]:  # just place directly on top.
+                    char_on_bg_r = segment_r
+                else:  # if wider than it's tall
+                    y_min = int(new_size / 2) - int(1.0 * segment_r.shape[0] / 2)
+                    y_max = y_min + segment_r.shape[0]
+                    black_bg[y_min:y_max, 0:black_bg.shape[0]] = segment_r
+                    char_on_bg_r = black_bg
+
+                # Have both left and right sides at this point. Next, do the resizing, deskewing etc
+                # resize
+                # use a size 128 for the purpose of smoothening the deskewing process
+                size_temp = 128
+                resized_l = cv2.resize(char_on_bg_l, (size_temp, size_temp), cv2.INTER_LINEAR)
+                resized_r = cv2.resize(char_on_bg_r, (size_temp, size_temp), cv2.INTER_LINEAR)
+
+                # Image.fromarray(resized_l).show()
+                # Image.fromarray(resized_r).show()
+
+                print "Have successfully resized stuff! "
+                # they are now 20, 20 pixels
+
+                char_dim = 28  # for the total box with the 4-wide frame
+                # next step is to deskew
+                deskew_l = deskew(resized_l)
+                deskew_r = deskew(resized_r)
+
+                trim_pad_l = trim_padding(deskew_l)
+                trim_pad_r = trim_padding(deskew_r)
+
+                #resized_l = resize_with_constant_ratio(trim_pad_l, char_dim=char_dim)  # is this even necessary?
+                # resized_r = resize_with_constant_ratio(trim_pad_r, char_dim=char_dim)
+
+                resized_l = cv2.resize(trim_pad_l, (char_dim, char_dim), cv2.INTER_LINEAR)
+                resized_r = cv2.resize(trim_pad_r, (char_dim, char_dim), cv2.INTER_LINEAR)
+
+                padded_l = pad_digit(resized_l, char_dim=char_dim)  # needed or not?
+                padded_r = pad_digit(resized_r, char_dim=char_dim)  # expect it to be needed only if the digit is not squared?
+
+                # Image.fromarray(255 - padded_l).show()
+                # Image.fromarray(255 - padded_r).show()
+
+                # Image.fromarray(resized_l).show()
+                # Image.fromarray(resized_r).show()
+
+                # do knn classification of each image
+                # need to add way of keeping track of the distances, though
+
+                print resized_l.shape
+                print resized_r.shape
+
+                arr_l = np.asarray(padded_l)
+                ready_l = arr_l.reshape(-1, 784).astype('float32')
+                ret, result_l, neighbours, dist = knn_model.findNearest(ready_l, k=3)  # k may need to be changed
+                print "KNN result: "
+                print result_l
+                print dist
+
+                arr_r = np.asarray(padded_r)
+                ready_r = arr_r.reshape(-1, 784).astype('float32')
+                ret, result_r, neighbours, dist = knn_model.findNearest(ready_r, k=3)  # k may need to be changed
+                print "KNN result: "
+                print result_r
+                print dist
+
+                pc.setSymbolGuesses(str(int(result_l)) + str(int(result_r)))
+
+        elif pc.getCategory() == 0:  # check if it's a hyphen
+            x_min, x_max, y_min, y_max = pc.findBoundingBox(pc.getOuter())
+            if cv2.contourArea(pc.getOuter()) > (0.70 * ((x_max-x_min)*(y_max-y_min))):  # then go ahead and assume it's a hyphen
+                pc.setSymbolGuesses("-")  # add hyphen as guess
+            else:  # treat as if no cuts are necessary (no cut hypothesis). Rarely triggered 
+                outer = pc.getOuter()
+                inner = pc.getInnerContours()  # may have multiple inner loops - in this case want to combine all of them
+                # handle the different formats of outer, inner 
+                outer_pts = []
+                for point in outer: 
+                    x = point[0]
+                    y = point[1]
+                    outer_pts.append([x, y])
+                outer = outer_pts 
+                
+                inner_pts = []
+                for point in inner: 
+                    x = point[0]
+                    y = point[1]
+                    inner_pts.append([x, y])
+                inner = inner_pts 
+                # the parts here may also be bugged, see line # 995
+
+                all_pts = outer + inner
+                x_min, x_max, y_min, y_max = pc.findBoundingBox(all_pts)
+                new_size = max((x_max-x_min), (y_max-y_min))
+                # may be able to recycle some code here
+                segment_c = binary[y_min:y_max, x_min:x_max]
+                black_bg = np.zeros((new_size, new_size), dtype='uint8')
+
+                if segment_c.shape[0] > segment_c.shape[1]:  # if it's taller than it's wide
+                    x_min = int(new_size/2) - int(1.0*segment_c.shape[1]/2)
+                    x_max = x_min + segment_c.shape[1]
+                    black_bg[0:black_bg.shape[0], x_min:x_max] = segment_c
+                    char_on_bg_c = black_bg
+                elif segment_c.shape[0] == segment_c.shape[1]:  # just place directly on top.
+                    char_on_bg_c = segment_c
+                else:  # if wider than it's tall
+                    y_min = int(new_size/2) - int(1.0*segment_c.shape[0]/2)
+                    y_max = y_min + segment_c.shape[0]
+                    black_bg[y_min:y_max, 0:black_bg.shape[0]] = segment_c
+                    char_on_bg_c = black_bg
+
+                dim_temp = 128
+                resized_c = cv2.resize(char_on_bg_c, (dim_temp, dim_temp), cv2.INTER_LINEAR)
+                char_dim = 28
+                deskew_c = deskew(resized_c)
+                trim_c = trim_padding(deskew_c)
+                resized_c = resize_with_constant_ratio(trim_c, char_dim=char_dim)
+                pad_c = pad_digit(resized_c, char_dim=char_dim)
+
+                Image.fromarray(pad_c).show()
+                # prepare pad_c for KNN
+                arr_c = np.asarray(pad_c)
+                ready_c = arr_c.reshape(-1, 784).astype('float32')
+                ret, result_c, neighbours, dist = knn_model.findNearest(ready_c, k=3)  # k may need to be changed
+                print "Result without cuts: "
+                print result_c
+                print dist
+                pc.setSymbolGuesses(str(int(result_c)))
+                # then feed pad_c to KNN
+                # place the segment centered on the black background
                 # lacking: some of the points from the original contour are left out...
                 # at this point, should be ready to extract characters (segmented)
                 # caution: need to add the hypothesis that the character is not segmented at all
 
                 # next add c_b to the upper and lower. but before that, want to split into right and left
     for pc in pattern_components:
-        print pc.getCategory()
+        # print pc.getCategory()
+        print pc.getSymbolGuesses()
 
+
+    """Currently, IMG_2377 leads to messed up output: a contour spanning nearly the entire image...
+
+    img = cv2.imread("/Users/sigurdandersberg/PycharmProjects/proj1/solidslice.png")  # open in grayscale
+    img_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+    # should start off by putting the line onto a white background? -- or do after carrying out binarization?
+
+    # at this point, want to do binarization
+    # binary = cv2.threshold(img_gray.astype('uint8'), 0, 255, cv2.THRESH_OTSU)[1]  # doesn't appear to work?
+
+    binary = threshold_adaptive(img_gray.copy(), method="gaussian", block_size=121, offset=8, param=11).astype('uint8')*255
+
+    print binary
+    Image.fromarray(binary).show()
+
+    black_bg = np.zeros(binary.shape, dtype='uint8')
+
+    im2, cnt, hier = cv2.findContours(binary.copy(), cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE)
+
+    large_cnt = []
+
+    for c in cnt:
+        if (cv2.contourArea(c) > 180) and (cv2.contourArea(c)<0.75*img.shape[0]*img.shape[1]):  # may use a smaller treshold since we do not have a large image, need not consider PT
+            large_cnt.append(c)  # or consider a threshold that varies with the height of the entire extracted image
+
+    cv2.drawContours(black_bg, large_cnt, -1, color=255, thickness=1)
+    Image.fromarray(black_bg).show()
+
+    # try with hybrid approach instead -- would require an instance of processor (image processor, containing file name)
+    # text_ret, boxes, img_ret = Hybrid.Hybrid("/Users/sigurdandersberg/PycharmProjects/proj1/solidslice.png")
+
+    # Image.fromarray(img_ret).show()
+    print black_bg.shape[0]
+    print black_bg.shape[1]"""
