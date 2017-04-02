@@ -19,6 +19,7 @@ import collections
 import pprint
 import os
 import pickle
+import Segmentation  # requires you to download Segmentation.py from our github repository
 
 
 class simpleapp_tk(Tkinter.Tk):
@@ -73,7 +74,7 @@ class simpleapp_tk(Tkinter.Tk):
         self.label4.grid(column=0, row=2)
 
         # dropdown menu for selecting image processing procedure
-        optionList = ["Hybrid", "Adaptive Thresholding", "WholeBoxReprocessSA", "cv2AdaptiveMean", "cv2AdaptiveGaussian", "AccItemCTest", "AdaptiveParameterExperiment", "HybridItemCTest", "AdaptiveWholeBoxTest", "ReprocessSA", "Advanced", "Basic", "ContourGaussianKernelOtsu", "GaussianKernelAndOtsu", "Otsu"]  # add more later
+        optionList = ["Hybrid", "Adaptive Thresholding", "WholeBoxReprocessSA", "SARemoveIC", "cv2AdaptiveMean", "cv2AdaptiveGaussian", "AccItemCTest", "AdaptiveParameterExperiment", "HybridItemCTest", "AdaptiveWholeBoxTest", "ReprocessSA", "Advanced", "Basic", "ContourGaussianKernelOtsu", "GaussianKernelAndOtsu", "Otsu"]  # add more later
         self.dropVar = Tkinter.StringVar()
         self.dropVar.set("Hybrid")  # default
         self.dropMenu1 = Tkinter.OptionMenu(self, self.dropVar, *optionList, command=self.func)
@@ -540,6 +541,115 @@ class simpleapp_tk(Tkinter.Tk):
                 # Image.fromarray(background).show()
                 repro = reprocessor(img_snipped_binary_for_tess)
                 repro.SingleLineTess()
+
+                # before carrying out the following, want to check whether it is necessary at all (based on score)
+                solidcands = Segmentation.Fujisawa('solidslice.png')
+                print solidcands
+
+
+
+                print "Ended, awaiting next input"
+
+        elif self.method in "SARemoveIC":
+            text, boxes, img = processor.AdaptiveThresholding()
+            img_pic = Image.fromarray(img)
+            self.DisplayProcessed(img_pic.resize((self.width, self.height), Image.ANTIALIAS))
+            self.DisplayOCRText(text)
+            interpreter = outputInterpreter()
+            text, categories = interpreter.categorizeLines(text)
+
+            # analyze the bounding boxes
+            # find the mean and sd of the heights of the lines
+            heights = []
+            for rectangle in boxes:
+                heights.append(rectangle[3] - rectangle[1])  # height of the line
+
+            heights = np.asarray(heights)
+            # mean_height, sd_height = cv2.meanStdDev(heights)  # will not be used yet
+
+            if self.ASN_loaded:
+                # categories, text, itemcode_indeces, unique_ic, skip_segmentation, solidassort_indeces = self.match_instance.checker(text, categories)
+                categories, text, itemcode_indeces, unique_ic, skip_segmentation, solidassort_indeces = self.match_instance.checkerNoText(
+                    text, categories)
+                # next, want to extract the S/A code and reprocess it, with a smaller whitelist
+                # have boxes from above, and have img still
+                index_ic = categories['Itemcode']
+                index_sa = categories['Solidcode']
+
+                # need to make adjustments, taking blank text lines into account and their missing bounding rectangles.
+                index_sa_adjusted = index_sa
+                sa_adjustment = 0
+                for x in xrange(0, index_sa):
+                    line_before = text[x].replace("\n", "")
+                    if len(line_before) == 0:
+                        sa_adjustment += 1
+
+                index_sa_adjusted = index_sa - sa_adjustment
+                index_ic_for_comparison = index_ic - sa_adjustment
+
+                index_sa = index_sa_adjusted  # make sure that text is not being accessed after this point!
+
+                coordinates = boxes[index_sa]
+
+                # to implement: better logic for extracting the solid/assorrt code
+                # based on...vertical thickness of lines
+                # position of IC, PCS info, Carton No, text description
+                # handle empty line text outputs (check their bounding boxes on line level, are the vertical heights close to 0? )
+
+                x_top_left = 0
+                y_top_left = coordinates[1]
+                x_bottom_right = img.shape[1]  # assuming x,y are reversed (order) by cv2 image reader.
+                y_bottom_right = coordinates[3] + int(0.01 * img.shape[0])  # too much?
+                # also needed: improved logic for finding the proper index of SA
+                # check: any lines w/ small vertical height near the IC?
+
+                if type(categories['Itemcode']) is not bool:
+                    ic_height = boxes[categories['Itemcode']][3] - boxes[categories['Itemcode']][1]
+                    height_threshold = int(0.30 * ic_height)
+                else:
+                    height_threshold = 20
+
+                if (index_sa - index_ic_for_comparison) > 1:
+                    if (boxes[index_sa - 1][3] - boxes[index_sa - 1][1]) < height_threshold:
+                        y_top_left = boxes[index_sa - 1][1]
+
+                        if (index_sa - index_ic_for_comparison) > 2:
+                            if (boxes[index_sa - 2][3] - boxes[index_sa - 2][1]) < height_threshold:
+                                y_top_left = boxes[index_sa - 2][1]
+                                if (index_sa - index_ic_for_comparison) > 3:
+                                    if (boxes[index_sa - 3][3] - boxes[index_sa - 3][1]) < height_threshold:
+                                        y_top_left = boxes[index_sa - 3][1]
+                elif index_sa - index_ic_for_comparison == 1:  # i.e. directly belwo
+                    pass
+                else:
+                    print "SA above IC is impossible, something has gone wrong upstream!"  # then what to do in this case?
+                    # could set to IC + 1 by default?
+                    index_sa = index_ic_for_comparison + 1
+                    y_top_left = boxes[index_sa][1]
+                    y_bottom_right = boxes[index_sa][3]
+                    # x-coords should be unaffected
+
+                img_snipped = img[y_top_left:y_bottom_right, x_top_left:x_bottom_right] # black text on white background
+
+                # img_rgb = cv2.imread(self.filename)
+                # img_snipped = img_rgb[y_top_left:y_bottom_right, x_top_left:x_bottom_right]  # region may be too small
+                Image.fromarray(img_snipped).show()  # then pass it on
+                Image.fromarray(img_snipped).save("solidslice.png")
+
+                # try: reprocess with Tesseract the extracted Solid/Assort regions
+                # for now, assume SOLID
+                dimension_y, dimension_x = img.shape
+                print dimension_y
+                print dimension_x
+                # background = np.zeros((dimension_y, dimension_x), dtype='float32')
+                # background[y_top_left:y_bottom_right, x_top_left:x_bottom_right] = img[y_top_left:y_bottom_right, x_top_left:x_bottom_right]
+                img_snipped_binary = img[y_top_left:y_bottom_right, x_top_left:x_bottom_right]  # in numpy array form
+                img_snipped_binary_for_tess = Image.fromarray(img_snipped_binary)
+                # img_snipped_binary_for_tess.show()
+                # Image.fromarray(background).show()
+                # should first remove all traces of the item code from the extracted region before feeding for reprocessing.
+                repro = reprocessor(img_snipped_binary_for_tess)
+                repro.SingleLineTess()
                 print "Ended, awaiting next input"
 
         elif self.method in "WholeBoxReprocessSA":
@@ -639,10 +749,10 @@ class simpleapp_tk(Tkinter.Tk):
                 print "Got these wrong:"
                 print errors
 
-        elif self.method in "cv2AdaptiveMean":
+        elif self.method in "cv2AdaptiveMean":  # needs to be fixed
             processor.cv2AdaptiveMean()
 
-        elif self.method in "cv2AdaptiveGaussian":
+        elif self.method in "cv2AdaptiveGaussian":  # need fix
             processor.cv2AdaptiveGaussian()
         else:
             print "Method selection error!"
