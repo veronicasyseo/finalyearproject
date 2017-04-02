@@ -9,7 +9,7 @@ import math
 
 
 def loadKNN():
-    path = "/Users/sigurdandersberg/PycharmProjects/proj1/knn_data_large.npz"
+    path = "path to your knn classifier, can download from google drive"
     with np.load(path) as data:
         print data.files # list the files stored
         train = data['train'].astype(np.float32)
