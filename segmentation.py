@@ -1,11 +1,11 @@
 import cv2
-from PIL import Image
+# from PIL import Image
 import numpy as np
 import math
-import matplotlib
+#import matplotlib
 
-matplotlib.use('TkAgg')
-import matplotlib.pyplot as plt
+#matplotlib.use('TkAgg')
+#import matplotlib.pyplot as plt
 
 
 def loadKNN():
@@ -21,7 +21,6 @@ def loadKNN():
     knn.train(train, cv2.ml.ROW_SAMPLE, train_labels)  # need to get correct input...
 
     return knn
-
 
 def deskew(img):
     """Deskew digit
@@ -43,7 +42,6 @@ def deskew(img):
     img = cv2.warpAffine(img, rot_mat, (img.shape[0], img.shape[1]), flags=cv2.WARP_INVERSE_MAP | cv2.INTER_LINEAR)
     return img
 
-
 def trim_padding(img):
     """Trim zeros rows and columns
 
@@ -63,7 +61,6 @@ def trim_padding(img):
     dst = dst[:, ~mask_col]
 
     return dst
-
 
 def resize_with_constant_ratio(img, char_dim):
     """Resize image while keeping aspect ratio. Max dim is char_dim
@@ -97,7 +94,6 @@ def resize_with_constant_ratio(img, char_dim):
 
     return dst
 
-
 def pad_digit(img, char_dim):
     """Pad zeros in order to get a square char_dimxchar_dim image
 
@@ -128,7 +124,7 @@ def pad_digit(img, char_dim):
     return dst
 
 class PatternComponent():
-    def __init__(self, outer):
+    def __init__(self, outer, width):
         """Structure of outer: x_min, points, x_max, outer_inner"""
         self.category = -1  # categories are 0, 1, 2 for not connecting, maybe connecting and definitely connecting. -1 would indicate an error
         self.outer = outer
@@ -147,6 +143,39 @@ class PatternComponent():
         self.right_full = []  # may be able to obtain by simply using + operator between lists ("concatinate"). But need to first divide into left and right hand side
         self.symbol_guesses = []
         self.symbol_distances = []
+        self.beta = -1
+
+        self.setBeta(width)  # always do when initialize then pattern component
+
+    def setBeta(self, width):
+        """Sets the beta value, which will later be used to give text outputs
+        Values and interpretation: 0 - nothing weird. 1 - either small contour or close to edge. 2 - both small and close to edge.
+        Here edge refers to LHS or RHS, not top/bottom. """
+        self.beta = 0
+        # need measure of contour size.
+        contour_size = cv2.contourArea(self.outer[1])  # uses Green's formula to approximate the contour area
+        # need a measure of the avg contour size (area)
+        x_min = self.outer[0]
+        x_max = self.outer[2]
+
+        lower_bound = int(width*0.15)
+        upper_bound = int(width*0.85)
+
+        if x_min < lower_bound and contour_size > 450:
+            self.beta = 1
+        elif x_max > upper_bound and contour_size > 450:
+            self.beta = 1
+        elif contour_size < 450:
+            self.beta = 1
+        elif x_min < lower_bound:
+            self.beta = 2
+        elif x_max > upper_bound:
+            self.beta = 2
+        else:
+            self.beta = 0
+
+    def getBeta(self):
+        return self.beta
 
     def setSymbolDistances(self, dist):
         if type(min(dist)) is int:
@@ -154,6 +183,7 @@ class PatternComponent():
         else:
             self.symbol_distances.append(min(dist)[0
                                          ])
+
     def getSymbolDistances(self):
         return self.symbol_distances
 
@@ -165,12 +195,25 @@ class PatternComponent():
         min_dist_index = np.argmin(dis)  # assume unique
         return sym[min_dist_index]
 
-
     def setSymbolGuesses(self, string):
         self.symbol_guesses.append(string)
 
     def getSymbolGuesses(self):
+        """Unordered"""
         return self.symbol_guesses
+
+    def getRankedSymbolGuesses(self):
+        """Ranked"""
+        guesses = self.getSymbolGuesses()
+        distances = self.getSymbolDistances()
+
+        dist_guess = zip(distances, guesses)  # zip so that we can rank them in order of increasing distance
+
+        dist_guess = sorted(dist_guess, key=lambda x: x[0])
+
+        distances, guesses = zip(*dist_guess)
+
+        return guesses
 
     def findBoundingBox(self, contour):
         """Returns the corners of the bounding box in form of:
@@ -397,10 +440,10 @@ class PatternComponent():
         # want to return all the points along the lines
         c_b = []
         if lower_cut[0] == upper_cut[0]:  # for other scenarios, skip for now.
-            for y in xrange(upper_cut[1], lower_cut[1]+1):
+            for y in xrange(min(upper_cut[1], lower_cut[1]), max(lower_cut[1], upper_cut[1])+1):
                 c_b.append([lower_cut[0], y])
-
-        return c_b
+                # in worst case scenario, return one single point
+        return c_b  # in very rare cases will return a single element
 
     def drawLeft(self, black_rectangle):
         for point in self.left:
@@ -419,11 +462,11 @@ class PatternComponent():
         right = self.right_full
 
         for point in left:
-            print point
+            #print point
             black_rectangle[point[1], point[0], 0] = 255
 
         for point in right:
-            print point
+            #print point
             black_rectangle[point[1], point[0], 2] = 255
 
         return black_rectangle
@@ -436,8 +479,8 @@ class PatternComponent():
         outer = self.outer
         return outer[:, 1]
 
-if __name__== "__main__":
-    img = cv2.imread("/Users/sigurdandersberg/PycharmProjects/proj1/solidslice.png", 0)
+def Fujisawa(filename_slice):
+    img = cv2.imread(filename_slice, 0)
     binary = 255 - img
     black_bg = np.zeros(binary.shape, dtype='uint8')
 
@@ -451,7 +494,7 @@ if __name__== "__main__":
 
     large_cnt_backup = large_cnt
     cv2.drawContours(black_bg, large_cnt, -1, color=255, thickness=1)
-    Image.fromarray(black_bg).show()
+    # Image.fromarray(black_bg).show()
 
     # next sort the contours such that points are from left to right
     # first, need to reshape the list of contours, as each coordinate currently is on the form [[x, y]] instead of [x, y]
@@ -529,7 +572,7 @@ if __name__== "__main__":
     count_outer = -1
     for contour in sorted_outer_inner_zip:  # may not be necessary to pass on the outer_inner value, but it does not hurt at this point
         if contour[3] == 0:  # i.e. if it's outer
-            pattern_components.append(PatternComponent(contour))  # create a new instance of pattern components, and keep in array
+            pattern_components.append(PatternComponent(contour, img.shape[1]))  # create a new instance of pattern components, and keep in array
             count_outer += 1
         else:  # assumes the the first contour to be checked will always be an outer contour
             pattern_components[count_outer].setInner(contour)
@@ -617,15 +660,15 @@ if __name__== "__main__":
         lower_increasing_x = np.asarray(sorted(lower, key=lambda x: x[0]))
         upper_increasing_x = np.asarray(sorted(upper, key=lambda x: x[0]))
 
-        print lower_increasing_x
-        print upper_increasing_x
+        #print lower_increasing_x
+        #print upper_increasing_x
         # for each x-value, extract a collection of all the points
         keep_points = []
         x_values = []
         for element in lower_increasing_x:  # first pass: find all the x-values
             if element[0] not in x_values:
                 x_values.append(element[0])
-        print x_values
+        #print x_values
 
         # next, handle the upper contour points, want to find the lowest y-coordinate for each x-coordinate (lowest meaning largest y-value)
         for x in x_values:  # may be able to merge some for-loops in the above to cut down PT by a nano-second
@@ -641,7 +684,7 @@ if __name__== "__main__":
             index_min_y = np.argmin(y_vals_current, axis=0)  # check if works correctly?
 
             keep_points.append(current[index_min_y])
-        print keep_points
+        #print keep_points
         pc.setLower(np.asarray(keep_points))
 
         keep_points = []
@@ -649,7 +692,7 @@ if __name__== "__main__":
         for element in upper_increasing_x:
             if element[0] not in x_values:
                 x_values.append(element[0])
-        print x_values
+        #print x_values
 
         for x in x_values:
             current = []
@@ -664,7 +707,7 @@ if __name__== "__main__":
             index_max_y = np.argmax(y_vals_current, axis=0)  # current error: empty list
 
             keep_points.append(current[index_max_y])
-        print keep_points
+        #print keep_points
         pc.setUpper(np.asarray(keep_points))
 
     black_rectangle = np.zeros((img.shape[0], img.shape[1], 3), dtype='uint8')
@@ -712,8 +755,8 @@ if __name__== "__main__":
                 inner_pts.append([x, y])
 
             inner = inner_pts
-            print "Inner: "
-            print inner
+            #print "Inner: "
+            #print inner
 
             if len(inner) > 0:
                 all_pts = outer + inner  # at this point, inner should be just a list of points, but it does not appear to hold for the 00 contour.
@@ -746,7 +789,7 @@ if __name__== "__main__":
             trim_c = trim_padding(deskew_c)
             resized_c = resize_with_constant_ratio(trim_c, char_dim=char_dim)
             pad_c = pad_digit(resized_c, char_dim=char_dim)
-            Image.fromarray(pad_c).show()
+            # Image.fromarray(pad_c).show()
             # prepare pad_c for KNN
             arr_c = np.asarray(pad_c)
             ready_c = arr_c.reshape(-1, 784).astype('float32')
@@ -792,10 +835,10 @@ if __name__== "__main__":
             x_for_graph = [row[0] for row in h_x]
             y_for_graph = [row[1] for row in h_x]
 
-            fig = plt.figure()
+            """fig = plt.figure()
             a = fig.add_subplot(1, 2, 1)
             plt.plot(x_for_graph, y_for_graph, "ro")  # plots red dots for H(x)
-            plt.show()
+            plt.show()"""
 
             # look for the points where H(x) and h_t cross
             h_x_x_min = pc.getXmin()
@@ -807,8 +850,8 @@ if __name__== "__main__":
             lower_bound = int(x_bar - (1.0*r_bar/3))  # may want to change from 3 to larger value
             upper_bound = int(x_bar + (1.0*r_bar/3))
 
-            print "Lower bound: " + str(lower_bound)
-            print "Upper bound: " + str(upper_bound)
+            #print "Lower bound: " + str(lower_bound)
+            #print "Upper bound: " + str(upper_bound)
 
             cross_points_upper = []
             cross_points_lower = []
@@ -1019,7 +1062,7 @@ if __name__== "__main__":
                 # Image.fromarray(resized_l).show()
                 # Image.fromarray(resized_r).show()
 
-                print "Have successfully resized stuff! "
+                # print "Have successfully resized stuff! "
                 # they are now 20, 20 pixels
 
                 char_dim = 28  # for the total box with the 4-wide frame
@@ -1048,8 +1091,8 @@ if __name__== "__main__":
                 # do knn classification of each image
                 # need to add way of keeping track of the distances, though
 
-                print resized_l.shape
-                print resized_r.shape
+                #print resized_l.shape
+                #print resized_r.shape
 
                 arr_l = np.asarray(padded_l)
                 ready_l = arr_l.reshape(-1, 784).astype('float32')
@@ -1073,9 +1116,9 @@ if __name__== "__main__":
 
         elif pc.getCategory() == 0:  # check if it's a hyphen
             x_min, x_max, y_min, y_max = pc.findBoundingBox(pc.getOuter())
-            if cv2.contourArea(pc.getOuter()) > (0.70 * ((x_max-x_min)*(y_max-y_min))):  # then go ahead and assume it's a hyphen
+            if (cv2.contourArea(pc.getOuter()) > (0.70 * ((x_max-x_min)*(y_max-y_min)))) and (x_max-x_min > y_max-y_min):  # then go ahead and assume it's a hyphen
                 pc.setSymbolGuesses("-")  # add hyphen as guess
-                pc.setSymbolDistances([0, 1])
+                pc.setSymbolDistances([0, 1])  # will therefore always be selected
             else:  # treat as if no cuts are necessary (no cut hypothesis). Rarely triggered
                 outer = pc.getOuter()
                 inner = pc.getInnerContours()  # may have multiple inner loops - in this case want to combine all of them
@@ -1123,7 +1166,7 @@ if __name__== "__main__":
                 resized_c = resize_with_constant_ratio(trim_c, char_dim=char_dim)
                 pad_c = pad_digit(resized_c, char_dim=char_dim)
 
-                Image.fromarray(pad_c).show()
+                # Image.fromarray(pad_c).show()
                 # prepare pad_c for KNN
                 arr_c = np.asarray(pad_c)
                 ready_c = arr_c.reshape(-1, 784).astype('float32')
@@ -1133,16 +1176,12 @@ if __name__== "__main__":
                 print dist
                 pc.setSymbolGuesses(str(int(result_c)))
                 pc.setSymbolDistances(dist)
-                # then feed pad_c to KNN
-                # place the segment centered on the black background
-                # lacking: some of the points from the original contour are left out...
                 # at this point, should be ready to extract characters (segmented)
                 # caution: need to add the hypothesis that the character is not segmented at all
 
-                # next add c_b to the upper and lower. but before that, want to split into right and left
     for pc in pattern_components:
         # print pc.getCategory()
-        print pc.getSymbolGuesses()
+        print pc.getSymbolGuesses()  # is this list ordered?
 
     stri = ""
     for pc in pattern_components:  # want to print the best guess for the value of the line before comparing with ASN
@@ -1151,39 +1190,36 @@ if __name__== "__main__":
     print "The best guess is: "
     print stri
 
+    for pc in pattern_components:
+        print pc.getBeta()
 
+    # next, use beta values to form the guesses for item code value
+    stri_0 = ""
+    stri_1 = ""
+    stri_2 = ""
 
-    """Currently, IMG_2377 leads to messed up output: a contour spanning nearly the entire image...
+    for pc in pattern_components:
+        if pc.getBeta() == 0:
+            stri_0 += pc.getMinSymbol()
+            stri_1 += pc.getMinSymbol()
+            stri_2 += pc.getMinSymbol()
+        elif pc.getBeta() == 1:
+            stri_1 += pc.getMinSymbol()
+            stri_2 += pc.getMinSymbol()
+        elif pc.getBeta() == 2:
+            stri_2 += pc.getMinSymbol()
 
-    img = cv2.imread("/Users/sigurdandersberg/PycharmProjects/proj1/solidslice.png")  # open in grayscale
-    img_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    print stri_0
+    print stri_1
+    print stri_2
 
-    # should start off by putting the line onto a white background? -- or do after carrying out binarization?
+    text_cands = []
+    text_cands.append(stri_0)
+    text_cands.append(stri_1)
+    text_cands.append(stri_2)
+    print "Ranked symbol guesses: "
+    for pc in pattern_components:
+        print pc.getRankedSymbolGuesses()  # seems to have no effect?
+    # now, generate all the text outputs
 
-    # at this point, want to do binarization
-    # binary = cv2.threshold(img_gray.astype('uint8'), 0, 255, cv2.THRESH_OTSU)[1]  # doesn't appear to work?
-
-    binary = threshold_adaptive(img_gray.copy(), method="gaussian", block_size=121, offset=8, param=11).astype('uint8')*255
-
-    print binary
-    Image.fromarray(binary).show()
-
-    black_bg = np.zeros(binary.shape, dtype='uint8')
-
-    im2, cnt, hier = cv2.findContours(binary.copy(), cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE)
-
-    large_cnt = []
-
-    for c in cnt:
-        if (cv2.contourArea(c) > 180) and (cv2.contourArea(c)<0.75*img.shape[0]*img.shape[1]):  # may use a smaller treshold since we do not have a large image, need not consider PT
-            large_cnt.append(c)  # or consider a threshold that varies with the height of the entire extracted image
-
-    cv2.drawContours(black_bg, large_cnt, -1, color=255, thickness=1)
-    Image.fromarray(black_bg).show()
-
-    # try with hybrid approach instead -- would require an instance of processor (image processor, containing file name)
-    # text_ret, boxes, img_ret = Hybrid.Hybrid("/Users/sigurdandersberg/PycharmProjects/proj1/solidslice.png")
-
-    # Image.fromarray(img_ret).show()
-    print black_bg.shape[0]
-    print black_bg.shape[1]"""
+    return text_cands
