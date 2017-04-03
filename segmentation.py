@@ -7,9 +7,11 @@ import math
 #matplotlib.use('TkAgg')
 #import matplotlib.pyplot as plt
 
+"""To-do: Add a screening method to remove noisy outer contours. """
+
 
 def loadKNN():
-    path = "path to your knn classifier, can download from google drive"
+    path = "/Users/sigurdandersberg/PycharmProjects/proj1/knn_data_large.npz"
     with np.load(path) as data:
         print data.files # list the files stored
         train = data['train'].astype(np.float32)
@@ -144,8 +146,36 @@ class PatternComponent():
         self.symbol_guesses = []
         self.symbol_distances = []
         self.beta = -1
+        self.y_min = 100000
+        self.y_max = 0
 
         self.setBeta(width)  # always do when initialize then pattern component
+        self.setYMin()
+        self.setYMax()
+
+    def setYMin(self):
+        outer = self.getOuter()
+        y_min = 10000
+        for point in outer:
+            if point[1] < y_min:
+                y_min = point[1]
+        self.y_min = y_min
+
+    def setYMax(self):
+        outer = self.getOuter()
+        y_max = 0
+
+        for point in outer:
+            if point[1] > y_max:
+                y_max = point[1]
+
+        self.y_max = y_max
+
+    def getYMin(self):
+        return self.y_min
+
+    def getYMax(self):
+        return self.y_max
 
     def setBeta(self, width):
         """Sets the beta value, which will later be used to give text outputs
@@ -479,6 +509,7 @@ class PatternComponent():
         outer = self.outer
         return outer[:, 1]
 
+
 def Fujisawa(filename_slice):
     img = cv2.imread(filename_slice, 0)
     binary = 255 - img
@@ -580,6 +611,34 @@ def Fujisawa(filename_slice):
     for pc in pattern_components:
         pc.printContourInfo()
 
+    # at this point, let's remove some annoying noise
+    poptarts = []
+    for x in xrange(1, len(pattern_components)):
+        x_min = pattern_components[x].getXmin()
+        x_max_prev = pattern_components[x-1].getXmax()
+
+        if x_min < x_max_prev:  # Potentially noisy, check y-dimension next
+            y_min_cur = pattern_components[x].getYMin()
+            y_min_prev = pattern_components[x-1].getYMin()
+
+            y_max_cur = pattern_components[x].getYMax()
+            y_max_prev = pattern_components[x-1].getYMax()
+
+            height_cur = y_max_cur - y_min_cur
+            height_prev = y_max_prev - y_min_prev
+
+            if (y_max_prev < y_min_cur) or (y_max_cur < y_min_prev) or (y_min_prev > y_max_cur):
+                if height_cur > height_prev:
+                    poptarts.append(pattern_components[x-1])
+                else:
+                    poptarts.append(pattern_components[x])
+
+    for pop in poptarts:
+        try:
+            pattern_components.remove(pop)
+            print "Removed a pattern component! Yay, less noise to worry about"
+        except ValueError:
+            print "Wanted to remove a pc, but it failed, GG!"
     # next, want to draw ihe contours in different colors for the sake of visibility
     black_rectangle = np.zeros((img.shape[0], img.shape[1], 3), dtype='uint8')
     for pc in pattern_components:
@@ -794,9 +853,9 @@ def Fujisawa(filename_slice):
             arr_c = np.asarray(pad_c)
             ready_c = arr_c.reshape(-1, 784).astype('float32')
             ret, result_c, neighbours, dist = knn_model.findNearest(ready_c, k=3)  # k may need to be changed
-            print "Result without cuts: "
-            print result_c
-            print dist
+            #print "Result without cuts: "
+            #print result_c
+            #print dist
             pc.setSymbolGuesses(str(int(result_c)))
             pc.setSymbolDistances(dist)
             # should not repeat the above every single time there is a new cut. Rather, do once for each pc
@@ -896,8 +955,16 @@ def Fujisawa(filename_slice):
 
                 while searching:
                     h_x_cur = h_x[[row[0] for row in h_x].index(x_candidate)][1]
-                    h_x_delta_neg = h_x[[row[0] for row in h_x].index(x_candidate - delta_x)][1]
-                    h_x_delta_pos = h_x[[row[0] for row in h_x].index(x_candidate + delta_x)][1]
+                    try:
+                        h_x_delta_neg = h_x[[row[0] for row in h_x].index(x_candidate - delta_x)][1]
+                    except ValueError:
+                        h_x_delta_neg = h_x_delta_neg
+
+                    try:
+                        h_x_delta_pos = h_x[[row[0] for row in h_x].index(x_candidate + delta_x)][1]
+                    except ValueError:
+                        h_x_delta_pos = h_x_delta_pos
+
                     # can either use delta_x or x_cur for the increment. Here use delta_x, so need to be careful when extract the cutting pts
                     ratio_pos = abs((1.0*h_x_delta_neg - h_x_cur)/h_x_cur)
                     ratio_neg = abs((1.0*h_x_delta_pos - h_x_cur)/h_x_cur)
@@ -1097,16 +1164,16 @@ def Fujisawa(filename_slice):
                 arr_l = np.asarray(padded_l)
                 ready_l = arr_l.reshape(-1, 784).astype('float32')
                 ret, result_l, neighbours, dist_l = knn_model.findNearest(ready_l, k=3)  # k may need to be changed
-                print "KNN result: "
-                print result_l
-                print dist_l
+                #print "KNN result: "
+                #print result_l
+                #print dist_l
 
                 arr_r = np.asarray(padded_r)
                 ready_r = arr_r.reshape(-1, 784).astype('float32')
                 ret, result_r, neighbours, dist_r = knn_model.findNearest(ready_r, k=3)  # k may need to be changed
-                print "KNN result: "
-                print result_r
-                print dist_r
+                #print "KNN result: "
+                #print result_r
+                #print dist_r
 
                 pc.setSymbolGuesses(str(int(result_l)) + str(int(result_r)))
                 # setting the distances is not straightforward when have two lists of distances
@@ -1171,27 +1238,27 @@ def Fujisawa(filename_slice):
                 arr_c = np.asarray(pad_c)
                 ready_c = arr_c.reshape(-1, 784).astype('float32')
                 ret, result_c, neighbours, dist = knn_model.findNearest(ready_c, k=3)  # k may need to be changed
-                print "Result without cuts: "
-                print result_c
-                print dist
+                #print "Result without cuts: "
+                #print result_c
+                #print dist
                 pc.setSymbolGuesses(str(int(result_c)))
                 pc.setSymbolDistances(dist)
                 # at this point, should be ready to extract characters (segmented)
                 # caution: need to add the hypothesis that the character is not segmented at all
 
-    for pc in pattern_components:
+    #for pc in pattern_components:
         # print pc.getCategory()
-        print pc.getSymbolGuesses()  # is this list ordered?
+        # print pc.getSymbolGuesses()  # is this list ordered?
 
     stri = ""
     for pc in pattern_components:  # want to print the best guess for the value of the line before comparing with ASN
         stri += str(pc.getMinSymbol())
 
-    print "The best guess is: "
-    print stri
+    #print "The best guess is: "
+    #print stri
 
-    for pc in pattern_components:
-        print pc.getBeta()
+    #for pc in pattern_components:
+        #print pc.getBeta()
 
     # next, use beta values to form the guesses for item code value
     stri_0 = ""
@@ -1221,5 +1288,19 @@ def Fujisawa(filename_slice):
     for pc in pattern_components:
         print pc.getRankedSymbolGuesses()  # seems to have no effect?
     # now, generate all the text outputs
+    text_outputs = []
+    for pc in pattern_components:
+        guesses = pc.getRankedSymbolGuesses()
+        text_outputs_updated = []
+        for guess in guesses:
+            if len(guess) > 0:
+                for text in text_outputs:
+                    text += guess
+                    text_outputs_updated.append(text)
+
+        text_outputs = text_outputs_updated
+
+    print "Full list of all the possible text outputs based on the segmentation and knn classification: "
+    print text_outputs
 
     return text_cands
