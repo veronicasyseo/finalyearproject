@@ -13,7 +13,7 @@ import math
 def loadKNN():
     path = "/Users/sigurdandersberg/PycharmProjects/proj1/knn_data_large.npz"
     with np.load(path) as data:
-        print data.files # list the files stored
+        # print data.files # list the files stored
         train = data['train'].astype(np.float32)
         train_labels = data['train_labels'].astype(np.float32)
 
@@ -378,7 +378,7 @@ class PatternComponent():
         self.category = category
 
     def getWidth(self):
-        print str(self.outer[2]-self.outer[0])
+        # print str(self.outer[2]-self.outer[0])
 
         return int(self.outer[2] - self.outer[0])
 
@@ -590,10 +590,16 @@ def Fujisawa(filename_slice):
     # print outer_inner
     # next, combine the outer_inner information with the contour information. No longer need x_min
     # but may extract in case it's needed
-    x_min, contours, x_max = zip(*sorted_zip)  # x_min will be ditched
+    try:
+        x_min, contours, x_max = zip(*sorted_zip)  # x_min will be ditched
+    except ValueError:
+        x_min = []
+        contours = []
+        x_max = []
+        print "In deep trouble, no contours at all! "
     outer_inner.insert(0, 0)  # assumes the first contour will always be an outer contour, which is reasonable
     sorted_outer_inner_zip = zip(x_min, contours, x_max, outer_inner)
-
+    # if this part fails, it's pretty much GG, as we do not have any way of executing the remaining parts of the code
     # second pass: want to find the parent contour of each inner contour
 
     pattern_components = []
@@ -608,8 +614,8 @@ def Fujisawa(filename_slice):
         else:  # assumes the the first contour to be checked will always be an outer contour
             pattern_components[count_outer].setInner(contour)
             # inner_contours.append(contour)  # any inner should belong to the previous outer?
-    for pc in pattern_components:
-        pc.printContourInfo()
+    # for pc in pattern_components:
+        #pc.printContourInfo()
 
     # at this point, let's remove some annoying noise
     poptarts = []
@@ -916,11 +922,25 @@ def Fujisawa(filename_slice):
             cross_points_lower = []
             for x in xrange(lower_bound, upper_bound):  # except that H(x) is defined for all values of x
                 if (h_x[[row[0] for row in h_x].index(x)][1] >= h_t) and (h_x[[row[0] for row in h_x].index(x)-1][1] < h_t): # a golden cross
-                    cross_points_lower.append(lower[[row[0] for row in lower].index(x)])
-                    cross_points_upper.append(upper[[row[0] for row in upper].index(x)])
+                    try:
+                        cross_points_lower.append(lower[[row[0] for row in lower].index(x)])
+                    except ValueError:
+                        cross_points_lower.append(upper[[row[0] for row in upper].index(x)])
+                    try:
+                        cross_points_upper.append(upper[[row[0] for row in upper].index(x)])
+                    except ValueError:
+                        cross_points_upper.append(lower[[row[0] for row in lower].index(x)])
                 elif (h_x[[row[0] for row in h_x].index(x)][1] <= h_t) and (h_x[[row[0] for row in h_x].index(x)-1][1] > h_t):  # cross from over to under
-                    cross_points_lower.append(lower[[row[0] for row in lower].index(x)])
-                    cross_points_upper.append(upper[[row[0] for row in upper].index(x)])
+                    #cross_points_lower.append(lower[[row[0] for row in lower].index(x)])
+                    # cross_points_upper.append(upper[[row[0] for row in upper].index(x)])
+                    try:
+                        cross_points_lower.append(lower[[row[0] for row in lower].index(x)])
+                    except ValueError:
+                        cross_points_lower.append(upper[[row[0] for row in upper].index(x)])
+                    try:
+                        cross_points_upper.append(upper[[row[0] for row in upper].index(x)])
+                    except ValueError:
+                        cross_points_upper.append(lower[[row[0] for row in lower].index(x)])
 
             # print cross_points_lower  # keeps track of all the x-values
             # print cross_points_upper
@@ -997,8 +1017,20 @@ def Fujisawa(filename_slice):
                     if delta_x > interval_length:
                         searching = False
 
-                cutting_points_lower.append(lower[[row[0] for row in lower].index(x_cur_highest_delta)])
-                cutting_points_upper.append(upper[[row[0] for row in upper].index(x_cur_highest_delta)])
+                try:
+                    cutting_points_lower.append(lower[[row[0] for row in lower].index(x_cur_highest_delta)])
+                except ValueError:
+                    try:
+                        cutting_points_lower.append(upper[[row[0] for row in upper].index(x_cur_highest_delta)])  # cannot always find this.
+                    except ValueError:
+                        pass
+                try:
+                    cutting_points_upper.append(upper[[row[0] for row in upper].index(x_cur_highest_delta)])
+                except ValueError:
+                    try:
+                        cutting_points_upper.append(lower[[row[0] for row in lower].index(x_cur_highest_delta)])
+                    except ValueError:
+                        pass
 
             for point in cutting_points_lower:
                 black_rectangle[point[1], point[0], 2] = 255
@@ -1284,9 +1316,9 @@ def Fujisawa(filename_slice):
     text_cands.append(stri_0)
     text_cands.append(stri_1)
     text_cands.append(stri_2)
-    print "Ranked symbol guesses: "
-    for pc in pattern_components:
-        print pc.getRankedSymbolGuesses()  # seems to have no effect?
+    # print "Ranked symbol guesses: "
+    #for pc in pattern_components:
+        #print pc.getRankedSymbolGuesses()  # seems to have no effect?
     # now, generate all the text outputs
     text_outputs = []
     for pc in pattern_components:
@@ -1300,7 +1332,7 @@ def Fujisawa(filename_slice):
 
         text_outputs = text_outputs_updated
 
-    print "Full list of all the possible text outputs based on the segmentation and knn classification: "
-    print text_outputs
+    # print "Full list of all the possible text outputs based on the segmentation and knn classification: "
+    # print text_outputs
 
     return text_cands
