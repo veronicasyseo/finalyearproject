@@ -21,7 +21,7 @@ import os
 import pickle
 import Segmentation  # requires you to download Segmentation.py from our github repository
 from random import shuffle
-
+import math
 
 class simpleapp_tk(Tkinter.Tk):
     def __init__(self, parent):  # constructor
@@ -75,7 +75,7 @@ class simpleapp_tk(Tkinter.Tk):
         self.label4.grid(column=0, row=2)
 
         # dropdown menu for selecting image processing procedure
-        optionList = ["Hybrid", "Adaptive Thresholding", "WholeBoxReprocessSA", "WholeBoxWithKNN", "SARemoveIC", "cv2AdaptiveMean", "cv2AdaptiveGaussian", "AccItemCTest", "AdaptiveParameterExperiment", "HybridItemCTest", "AdaptiveWholeBoxTest", "ReprocessSA", "Advanced", "Basic", "ContourGaussianKernelOtsu", "GaussianKernelAndOtsu", "Otsu"]  # add more later
+        optionList = ["Hybrid", "PrintedBoxesFullSystem", "Adaptive Thresholding", "WholeBoxReprocessSA", "WholeBoxWithKNN", "SARemoveIC", "cv2AdaptiveMean", "cv2AdaptiveGaussian", "AccItemCTest", "AdaptiveParameterExperiment", "HybridItemCTest", "AdaptiveWholeBoxTest", "ReprocessSA", "Advanced", "Basic", "ContourGaussianKernelOtsu", "GaussianKernelAndOtsu", "Otsu"]  # add more later
         self.dropVar = Tkinter.StringVar()
         self.dropVar.set("Hybrid")  # default
         self.dropMenu1 = Tkinter.OptionMenu(self, self.dropVar, *optionList, command=self.func)
@@ -355,10 +355,11 @@ class simpleapp_tk(Tkinter.Tk):
                     img_snipped_binary_for_tess = Image.fromarray(img_snipped_binary)
                     repro = reprocessor(img_snipped_binary_for_tess)
                     text_solid_assort = repro.SingleLineTess()  # contains a single guess for the value
+                    feed = []
+                    feed.append(text_solid_assort)
+                    sa_indices, min_dist = self.match_instance.saReprocessed(feed, itemcode_indeces)
 
-                    sa_indices, min_dist = self.match_instance.saReprocessed(text_solid_assort, itemcode_indeces)
-
-                    if min_dist < 0.25:
+                    if min_dist < 0.35:  # need to adjust, and to make consistent along all the checks
                         skip_segmentation = True
                     # check repro against the ASN.
 
@@ -707,7 +708,7 @@ class simpleapp_tk(Tkinter.Tk):
                 img_snipped = img[y_top_left:y_bottom_right, x_top_left:x_bottom_right]
                 # img_rgb = cv2.imread(self.filename)
                 # img_snipped = img_rgb[y_top_left:y_bottom_right, x_top_left:x_bottom_right]  # region may be too small
-                Image.fromarray(img_snipped).show()  # then pass it on
+                # Image.fromarray(img_snipped).show()  # then pass it on
                 Image.fromarray(img_snipped).save("solidslice.png")
 
                 # try: reprocess with Tesseract the extracted Solid/Assort regions
@@ -719,16 +720,17 @@ class simpleapp_tk(Tkinter.Tk):
                 # background[y_top_left:y_bottom_right, x_top_left:x_bottom_right] = img[y_top_left:y_bottom_right, x_top_left:x_bottom_right]
                 img_snipped_binary = img[y_top_left:y_bottom_right, x_top_left:x_bottom_right]  # in numpy array form
                 img_snipped_binary_for_tess = Image.fromarray(img_snipped_binary)
-                img_snipped_binary_for_tess.show()
+                # img_snipped_binary_for_tess.show()
                 # Image.fromarray(background).show()
                 repro = reprocessor(img_snipped_binary_for_tess)
                 text_solid_assort = repro.SingleLineTess()  # contains a single guess for the value
-
+                feed = []
+                feed.append(text_solid_assort)
                 # should do substrings also, often a redundant digit '1' is added at the front of the output from this stage, while the remaining SC is correct 
-                sa_indices, min_dist = self.match_instance.saReprocessed(text_solid_assort, itemcode_indeces)
+                sa_indices, min_dist = self.match_instance.saReprocessed(feed, itemcode_indeces)
                 # want the absolute value of the minimum distance also for the purpose of checking whether segmentation is needed or not
 
-                if min_dist < 0.25:
+                if min_dist < 0.35:
                     skip_segmentation = True
                 # check repro against the ASN.
 
@@ -966,6 +968,277 @@ class simpleapp_tk(Tkinter.Tk):
                 print "Got these wrong:"
                 print errors
 
+        elif self.method in "PrintedBoxesFullSystem":
+            if self.ASN_loaded:
+                directory = askdirectory()
+                # randomize all the files in the directory, and store the order for future reference.
+                name_list = []
+
+                for filename in os.listdir(directory):
+                    if filename.endswith(".JPG"):
+                        name_list.append(filename)
+
+                shuffle(name_list)
+                with open("name_list.pickled", "wb") as f:  # the pickle will get crowded over time if the new lists are written on top of the previous ones
+                    pickle.dump(name_list, f)
+
+                count_attempts = 0
+                count_correct_ic = 0
+                count_correct_sa = 0
+                count_correct_box = 0
+                not_unique_but_correct = []
+                # errors = []
+                count_correct_not_unique = 0
+                errors_ic = []
+                errors_sa = []
+
+                for filename in name_list:
+                    if filename.endswith(".JPG"):  # conditions for initiating table removal
+                        if self.match_instance.inPrintedList(filename): # don't do if not printed
+                            count_attempts += 1
+                            processor = img_processor(os.path.join(directory, filename))
+                            text, boxes, img = processor.AdaptiveThresholding()
+                            interpreter = outputInterpreter()
+                            text, categories = interpreter.categorizeLines(text)
+
+                            # Image.fromarray(img).save("binary.png")
+
+                            categories, text, itemcode_indeces, unique_ic, skip_segmentation, solidassort_indeces = self.match_instance.checkerNoText(
+                                text, categories)  # use the checker that does not rely on the text description
+                            # next, want to extract the S/A code and reprocess it, with a smaller whitelist
+                            # have boxes from above, and have img still
+                            correct_index = self.match_instance.correctFinder(filename)  # for testing purposes only. Caution: use filename, not self.filename
+                            # need a match instance to find the solidassort indices that fit best.
+                            print "Correct index: " + str(correct_index)
+
+                            feed = []
+                            feed.append(text[categories['Solidcode']])
+                            sa_indices_original, dist_original = self.match_instance.saReprocessed(feed,
+                                                                                                   itemcode_indeces)
+                            # consider: check again if want to do any segmentation
+                            # prior to extracting the SA code, would like to
+
+                            rp_table = reprocessor(Image.fromarray(img))
+
+                            result = rp_table.removeTables(img)  # want to remove the table (largest rectangular contour)
+
+                            if type(result) is not bool:
+                                img_rt = result
+                                Image.fromarray(img_rt).save("binarynotable.png")
+                                proc2 = img_processor("binarynotable.png")
+                                text_rt, boxes_rt, img_rt = proc2.AdaptiveThresholding()
+
+                                text_rt, categories = interpreter.categorizeLines(text_rt)
+
+                                cat_rt, text_rt, ic_ind_rt, unique_ic_rt, skip_seg_rt, sa_ind_rt = self.match_instance.checkerNoText(text_rt, categories)
+                                # then pass on to matcher instance
+
+                                feed = []
+                                feed.append(text_rt[cat_rt['Solidcode']])  # because it must be in form of a list
+                                sa_indices_rt, dist_rt = self.match_instance.saReprocessed(feed, ic_ind_rt)
+                                # compare the results from this stage to those of the previous method (no removal of table)
+                                if dist_rt < dist_original:
+                                    sa_indices_original = sa_indices_rt  # then move on from here
+                                    itemcode_indeces = ic_ind_rt
+                                    categories = cat_rt
+                                    text = text_rt
+                                    boxes = boxes_rt
+                                    solidassort_indeces = sa_ind_rt
+                                    skip_segmentation = skip_seg_rt
+
+                            index_ic = categories['Itemcode']
+                            index_sa = categories['Solidcode']
+
+                            # need to make adjustments, taking blank text lines into account and their missing bounding rectangles.
+                            sa_adjustment = 0
+                            for x in xrange(0, index_sa):
+                                line_before = text[x].replace("\n", "")
+                                if len(line_before) == 0:
+                                    sa_adjustment += 1
+
+                            index_sa_adjusted = index_sa - sa_adjustment
+
+                            # find the IC adjustment next:
+                            ic_adjustment = 0
+                            for x in xrange(0, index_ic):
+                                line_before = text[x].replace("\n", "")
+                                if len(line_before) == 0:
+                                    ic_adjustment += 1
+                            # index_ic_for_comparison = index_ic - sa_adjustment
+                            index_ic_for_comparison = index_ic - ic_adjustment
+                            index_sa = index_sa_adjusted  # make sure that text is not being accessed after this point!
+
+                            coordinates = boxes[index_sa]
+
+                            # to implement: better logic for extracting the solid/assort code
+                            # based on...vertical thickness of lines
+                            # position of IC, PCS info, Carton No, text description
+                            # handle empty line text outputs (check their bounding boxes on line level, are the vertical heights close to 0? )
+
+                            x_top_left = 0
+                            y_top_left = coordinates[1]
+                            x_bottom_right = img.shape[1]  # assuming x,y are reversed (order) by cv2 image reader.
+                            y_bottom_right = coordinates[3] + int(0.01 * img.shape[0])  # too much?
+                            # also needed: improved logic for finding the proper index of SA
+                            # check: any lines w/ small vertical height near the IC?
+
+                            if type(categories['Itemcode']) is not bool:
+                                ic_height = boxes[categories['Itemcode']][3] - boxes[categories['Itemcode']][1]
+                                height_threshold = int(0.30 * ic_height)
+                            else:
+                                height_threshold = 20
+
+                            if (index_sa - index_ic_for_comparison) > 1:
+                                if (boxes[index_sa - 1][3] - boxes[index_sa - 1][1]) < height_threshold:
+                                    y_top_left = boxes[index_sa - 1][1]
+
+                                    if (index_sa - index_ic_for_comparison) > 2:
+                                        if (boxes[index_sa - 2][3] - boxes[index_sa - 2][1]) < height_threshold:
+                                            y_top_left = boxes[index_sa - 2][1]
+                                            if (index_sa - index_ic_for_comparison) > 3:
+                                                if (boxes[index_sa - 3][3] - boxes[index_sa - 3][
+                                                    1]) < height_threshold:
+                                                    y_top_left = boxes[index_sa - 3][1]
+                            elif index_sa - index_ic_for_comparison == 1:  # i.e. directly below
+                                pass
+                            else:
+                                print "SA above IC is impossible, something has gone wrong upstream!"  # set to index_ic + 1 as default "best guess
+                                index_sa = index_ic_for_comparison + 1
+                                try:
+                                    y_top_left = boxes[index_sa][1]
+                                    y_bottom_right = boxes[index_sa][3]
+                                except IndexError:
+                                    y_top_left = boxes[index_sa-1][1]
+                                    y_bottom_right = boxes[index_sa-1][3]
+
+                            img_snipped = img[y_top_left:y_bottom_right, x_top_left:x_bottom_right]
+                            # img_rgb = cv2.imread(self.filename)
+                            # img_snipped = img_rgb[y_top_left:y_bottom_right, x_top_left:x_bottom_right]  # region may be too small
+                            # Image.fromarray(img_snipped).show()  # then pass it on
+                            Image.fromarray(img_snipped).save("solidslice.png")
+
+                            # try: reprocess with Tesseract the extracted Solid/Assort regions
+                            # for now, assume SOLID
+                            dimension_y, dimension_x = img.shape
+                            print dimension_y
+                            print dimension_x
+                            # background = np.zeros((dimension_y, dimension_x), dtype='float32')
+                            # background[y_top_left:y_bottom_right, x_top_left:x_bottom_right] = img[y_top_left:y_bottom_right, x_top_left:x_bottom_right]
+                            img_snipped_binary = img[y_top_left:y_bottom_right,
+                                                 x_top_left:x_bottom_right]  # in numpy array form
+                            img_snipped_binary_for_tess = Image.fromarray(img_snipped_binary)
+
+                            repro = reprocessor(img_snipped_binary_for_tess)
+                            text_solid_assort = repro.SingleLineTess()  # contains a single guess for the value
+                            feed = []
+                            feed.append(text_solid_assort)
+                            # should do substrings also, often a redundant digit '1' is added at the front of the output from this stage, while the remaining SC is correct
+                            sa_indices, min_dist = self.match_instance.saReprocessed(text_solid_assort,
+                                                                                     itemcode_indeces)
+                            # want the absolute value of the minimum distance also for the purpose of checking whether segmentation is needed or not
+
+                            if min_dist < 0.25:  #changed from 0.35
+                                skip_segmentation = True
+
+                            # check again here if want to do segmentation or not
+
+                            # need more appropriate comparison of the results for SA code from both first and second passes
+                            # dist_original
+                            # min_dist_reprocess
+                            min_dist_reprocess = min_dist  # corresponds to sa_indices
+                            sa_indices_reprocess = sa_indices
+                            min_dist_first = dist_original  # corresponds to sa_indices_original
+                            sa_indices_first = solidassort_indeces  # check
+
+                            if min_dist_first < 0.25:  # changed from 0.35
+                                skip_segmentation = True
+
+                            # split into two streams, based on whether segmentation can be skipped or not
+                            if not skip_segmentation:
+                                solidcands = Segmentation.Fujisawa('solidslice.png')
+                                print solidcands
+
+                                sa_indices_from_segmentation, min_dist_from_segmentation = self.match_instance.saReprocessed(
+                                    solidcands, itemcode_indeces)
+
+                                if (dist_original <= min_dist) and (dist_original <= min_dist_from_segmentation):
+                                    sa_verdict = sa_indices_original
+                                elif (min_dist <= dist_original) and (min_dist <= min_dist_from_segmentation):
+                                    sa_verdict = sa_indices
+                                else:
+                                    sa_verdict = sa_indices_from_segmentation
+                            else:
+                                if min_dist_reprocess < min_dist_first:
+                                    sa_verdict = sa_indices_reprocess
+                                else:
+                                    sa_verdict = sa_indices_first
+
+                            print itemcode_indeces
+                            print sa_verdict
+                            # compare all the 3 rounds of SA guesses and their min distances to ASN -> form guess about which box it is.
+
+                            # now, want to return the guesses of item code, solid/assort code and the entire box
+
+                            print str(filename)
+                            print "Starting next input"
+
+                            # now, want to return the guesses of item code, solid/assort code and the entire box
+                            unique_sa = self.match_instance.uniqueSA(itemcode_indeces, sa_verdict)
+                            # sa_verdict contains all the indices we are looking for. Use matcher for this
+                            """if (correct_index in itemcode_indeces) and unique_ic:
+                                count_correct_ic += 1
+                                print "Found the correct Itemcode"
+                                if (correct_index in sa_verdict) and unique_sa:
+                                    count_correct_box += 1
+                                    print "Found correct SKU!"""
+                            if correct_index in itemcode_indeces:
+                                count_correct_ic += 1
+                                print "Found correct itemcode!"
+                                if correct_index in sa_verdict:
+                                    count_correct_box += 1
+                                    print "Found correct SKU!"
+
+                            if correct_index in sa_verdict:
+                                count_correct_sa += 1
+                                print "Found correct SA!"
+
+                            if correct_index not in itemcode_indeces:
+                                errors_ic.append(filename)
+
+                            if correct_index not in sa_verdict:
+                                errors_sa.append(filename)
+
+                            # accuracies if don't want uniqueness:
+                            if (correct_index in itemcode_indeces) and (correct_index in sa_verdict) and (
+                                not unique_sa or not unique_ic):
+                                count_correct_not_unique += 1
+                                not_unique_but_correct.append(filename)
+
+                            print str(filename)
+
+                            self.match_instance.removeDoneBox(correct_index)
+
+                            print "So far, have done " + str(count_attempts) + " boxes, and the accuracy thus far is: " + str((1.0 * count_correct_box / count_attempts))
+
+                            print "Ended, awaiting next input"
+                        else:
+                            correct_index = self.match_instance.correctFinder(filename)
+                            self.match_instance.removeDoneBox(correct_index)
+                print "Test completed! "
+                print "Correct IC: " + str(count_correct_ic) + " "
+                print "Correct SA: " + str(count_correct_sa) + " "
+                print "Correct overall, uniquely determined: " + str(count_correct_box) + " "
+                print "The corresponding accuracy is: " + str((1.0 * count_correct_box / count_attempts)) + " "
+                print "Correct overall but not unique: " + str(count_correct_not_unique) + " "
+                print "Errors IC: "
+                print errors_ic
+                print "Errors SA: "
+                print errors_sa
+                print "Not unique but correct: "
+                print not_unique_but_correct
+                print "Number of boxes tested: " + str(count_attempts)
+
+
         elif self.method in "cv2AdaptiveMean":  # needs to be fixed
             processor.cv2AdaptiveMean()
 
@@ -999,8 +1272,8 @@ class reprocessor():
         self.img = img # takes a PIL image as input
 
     def SingleLineTess(self):
-        with PyTessBaseAPI(psm=8) as api: # 7 may also work. Try 8 also?
-            api.SetVariable("tessedit_char_whitelist", "-0123456789IF")  # ABCDEFGHIJKLMNOPQRSTUVWXYZ
+        with PyTessBaseAPI(psm=7) as api: # 7 may also work. Try 8 also?
+            api.SetVariable("tessedit_char_whitelist", "-0123456789IFRL. ")  # ABCDEFGHIJKLMNOPQRSTUVWXYZ
             api.SetImage(self.img)
             text = api.GetUTF8Text()
             print text
@@ -1008,6 +1281,56 @@ class reprocessor():
             print api.AllWordConfidences()
 
         return text
+
+    def removeTables(self, image):
+        img = image
+        abac, contours, hiearchy = cv2.findContours(img, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE)
+
+        area_threshold = 90000  # even 6000 may be too small of a threshold
+        # large_contours = []
+        area_img = img.shape[0] * img.shape[1]
+        area_upper_bound = math.floor(0.85 * area_img)
+
+        largest_cont = 0
+        largest_area = 0
+
+        for cont in contours:
+            if (cv2.contourArea(cont) > area_threshold) and (cv2.contourArea(cont) < area_upper_bound):
+                rect = cv2.boundingRect(cont)
+                area_rect = math.floor(rect[2] * rect[3])
+                ratio_areas = 1.0 * cv2.contourArea(cont) / area_rect
+                print ratio_areas
+                if ratio_areas > 0.80:
+                    # assume it's a table of label in this case
+                    # large_contours.append(cont)
+                    # rect = cv2.minAreaRect(cont)  # normally, the rotation would be minimal
+                    # print rect
+                    # box = cv2.boxPoints(rect)  # need to get area of the bounding box
+                    # print box
+                    # large_contours.append(cont)
+                    # box = np.int0(box)
+                    # cv2.drawContours(img, [box], 0, (0, 0, 255), 2)
+                    if cv2.contourArea(cont) > largest_area:
+                        largest_area = cv2.contourArea(cont)
+                        largest_cont = cont
+
+        if type(largest_cont) is not int:
+            print len(largest_cont)  # need to verify that length is 1
+            rect = cv2.boundingRect(largest_cont)
+
+            black_bg = np.zeros((img.shape[0], img.shape[1]), dtype='uint8')  # in terms of y, x
+            black_bg[rect[1]:rect[1] + rect[3], rect[0]:rect[0] + rect[
+                2]] = 255  # all pixels within the outer bounding rectangle are supposed to turn white
+
+            # up until now, img is with very light color, on black background?
+            # want to have black text on white background, want
+            img = 255 * img
+            result = img + black_bg
+
+            return result
+        else:
+            return False
+
 
 class img_processor():
     def __init__(self, filename):
@@ -1022,6 +1345,60 @@ class img_processor():
             text_output = api.GetUTF8Text()
             image_processed = api.GetThresholdedImage()
             return text_output, image_processed
+
+    def removeTables(self):
+        img = cv2.imread(self.filename)  # should be binary image (or more exact, the output directly from the adaptive thresh)
+        ab, contours, hierarchy = cv2.findContours(img, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE)
+
+        area_threshold = 90000  # even 6000 may be too small of a threshold
+        large_contours = []
+        area_img = img.shape[0] * img.shape[1]
+        area_upper_bound = math.floor(0.85 * area_img)
+
+        largest_cont = 0
+        largest_area = 0
+
+        for cont in contours:
+            if (cv2.contourArea(cont) > area_threshold) and (cv2.contourArea(cont) < area_upper_bound):
+                rect = cv2.boundingRect(cont)
+                area_rect = math.floor(rect[2] * rect[3])
+                ratio_areas = 1.0 * cv2.contourArea(cont) / area_rect
+                print ratio_areas
+                if ratio_areas > 0.80:
+                    # assume it's a table of label in this case
+                    large_contours.append(cont)
+                    # rect = cv2.minAreaRect(cont)  # normally, the rotation would be minimal
+                    # print rect
+                    # box = cv2.boxPoints(rect)  # need to get area of the bounding box
+                    # print box
+                    # large_contours.append(cont)
+                    # box = np.int0(box)
+                    # cv2.drawContours(img, [box], 0, (0, 0, 255), 2)
+                    if cv2.contourArea(cont) > largest_area:
+                        largest_area = cv2.contourArea(cont)
+                        largest_cont = cont
+
+        if type(largest_cont) is not int:
+            print len(largest_cont)  # need to verify that length is 1
+            rect = cv2.boundingRect(largest_cont)
+
+            black_bg = np.zeros((img.shape[0], img.shape[1]), dtype='uint8')  # in terms of y, x
+            black_bg[rect[1]:rect[1] + rect[3], rect[0]:rect[0] + rect[
+                2]] = 255  # all pixels within the outer bounding rectangle are supposed to turn white
+
+            # up until now, img is with very light color, on black background?
+            # want to have black text on white background, want
+            img = 255 * img
+            result = img + black_bg
+
+            # may want to call this part form outside the class, in order to avoid instances within instances
+            Image.fromarray(result).save("aftertablegone.png")
+            fn = "aftertablegone.png"
+            text, boxes, img = self.AdaptiveThresholding()
+
+            return text, boxes, img
+        else:
+            return False, False, False
 
     def Basic(self, thresholded, img_array):  # for the purpose of debugging, will also draw the bounding rectangles for where tesseract thinks there are characters
         load_time = time.clock()
@@ -1852,7 +2229,7 @@ class CSVLoader():  # also functions as CSV handler
         return asn_data
 
 
-def INSERTION(A, cost=2):
+def INSERTION(A, cost=1):
   return cost
 
 
@@ -1862,16 +2239,25 @@ def DELETION(A, cost=1):
 def DELETIONNOCOST(A, cost=0):
     return cost
 
-def SUBSTITUTION(A, B, cost=1):  # want custom weights. Confusion matrix please!
-  return cost
+def SUBSTITUTION(A, B, cost=0.15):  # want custom weights. Confusion matrix please!
+  if (A in "O" or "o") and (B in "0"):
+          return 0.04
+  elif (A in "I" or "i" or "L" or "l") and (B in "1"):
+      return 0.05
+  elif (A in "B" or "b") and (B in "8"):
+      return 0.055
+  elif (A in ".") and (B in "-"):
+      return 0.08
+  else:
+    return cost
 
 def DELETIONSMATCHER(A, cost=1): # Does NOT need to be integer
     if A in " ":
         return 0
     elif A.isalpha():
-        return 0.2
+        return 0.04
     elif A.isdigit():
-        return 0.2
+        return 0.04  # was originally 0.2
     else:
         return cost
 
@@ -2071,7 +2457,8 @@ class matcher():
         return ret_val
 
     def removeDoneBox(self, index):
-        self.asn.pop(index)
+        self.asn.pop(int(index))  # should not be necessary to convert to int
+        # check if this pops the entire asn away?
 
     def uniqueSA(self, itemcode_indices, sa_indices):
         asn = self.asn  # structure: Text, IC, SA, Filename, HW/printed
@@ -2095,14 +2482,13 @@ class matcher():
         # img name is on form IMG_DDDD.JPG. DDDD should be found in self.asn[index][3]
         asn = self.asn
 
-        yo = re.findall(r'\d{4}', filename, re.UNICODE)
+        yo = re.findall(r'\d{4}', filename, re.UNICODE)  # look for the 4 digits in a row in filename
         if len(yo) == 1:
             code = yo[0]
 
             for k in range(1, len(asn)):
                 if code in asn[k][3]:
                     return k
-                    break
 
         else:
             print "Error in handling filename"
@@ -2280,16 +2666,30 @@ class matcher():
             print "Did not find neither itemcode nor text description. Consider changing image processing method "
             return False
 
-    def solidassortFinderPerfect(self, text_lines, categories):
+    def solidassortFinderPerfect(self, text_lines, categories, dist):  # this is where everything gets messed up
         asn = self.asn
         text_lines = text_lines
         categories = categories
+        dist = dist
+        dist = 1000
+        # only works if the method for calculating distances is the same, and if the index for sa is correct.
         solidassort = text_lines[categories['Solidcode']].replace(" ", "")
+        solidassort = solidassort.replace("\n", "")
         solidassort_indeces = []
 
-        for k in range(0, len(asn)):
-            if solidassort in asn[k][2]:
+        # iteration 1: find the minimal cost
+        # pass 2: find the value corresponding to the minimum cost
+
+        for k in range(1, len(asn)):
+            if WagnerFischer(solidassort, asn[k][2], deletion=DELETIONNOCOST, substitution=SUBSTITUTION).cost < dist:
+                solidassort_indeces = []
                 solidassort_indeces.append(k)
+                dist = WagnerFischer(solidassort, asn[k][2], deletion=DELETIONNOCOST, substitution=SUBSTITUTION).cost
+            elif WagnerFischer(solidassort, asn[k][2], deletion=DELETIONNOCOST, substitution=SUBSTITUTION).cost == dist:
+                solidassort_indeces.append(k)
+
+        for k in solidassort_indeces:
+            print asn[k][2]
 
         return solidassort_indeces
 
@@ -2303,11 +2703,11 @@ class matcher():
 
         if type(categories['Solidcode']) is not bool:
             for k in itemcode_indeces:  # assume that itemcode is correctly identified. Will introduce some bias, but will be similar to how the problem is actually solved
-                if WagnerFischer(solidassort, asn[k][3], deletion=DELETIONNOCOST).cost < min_dist:
-                    min_dist = WagnerFischer(solidassort, asn[k][3], deletion=DELETIONNOCOST).cost
+                if WagnerFischer(solidassort, asn[k][2], deletion=DELETIONNOCOST).cost < min_dist:
+                    min_dist = WagnerFischer(solidassort, asn[k][2], deletion=DELETIONNOCOST).cost
                     min_indeces = []
                     min_indeces.append(k)
-                elif WagnerFischer(solidassort, asn[k][3], deletion=DELETIONNOCOST).cost == min_dist:
+                elif WagnerFischer(solidassort, asn[k][2], deletion=DELETIONNOCOST).cost == min_dist:
                     min_indeces.append(k)
 
         return min_indeces
@@ -2320,11 +2720,11 @@ class matcher():
         itemcode_indeces = itemcode_indeces
 
         for k in itemcode_indeces:
-            if WagnerFischer(line, asn[k][3], deletion=DELETIONNOCOST).cost < min_dist:
-                min_dist = WagnerFischer(line, asn[k][3], deletion=DELETIONNOCOST).cost
+            if WagnerFischer(line, asn[k][2], deletion=DELETIONNOCOST).cost < min_dist:
+                min_dist = WagnerFischer(line, asn[k][2], deletion=DELETIONNOCOST).cost
                 min_indeces = []
                 min_indeces.append(k)
-            elif WagnerFischer(line, asn[k][3], deletion=DELETIONNOCOST).cost == min_dist:
+            elif WagnerFischer(line, asn[k][2], deletion=DELETIONNOCOST).cost == min_dist:
                 min_indeces.append(k)
 
         return min_indeces
@@ -2335,18 +2735,44 @@ class matcher():
         min_indeces = []
         itemcode_indeces = itemcode_indices
 
+        "To-Do: instead of checking only the entire line for matches with the ASN, also do substrings"
+        # Deletion cost = 0: any implications on the matching?
+        # Insertion cost default
+
         for text_line in text_lines:
             line = text_line.replace(" ", "")
+            line = line.replace("\n", "")
 
             for k in itemcode_indeces:
-                if WagnerFischer(line, asn[k][3], deletion=DELETIONNOCOST).cost < min_dist:
-                    min_dist = WagnerFischer(line, asn[k][3], deletion=DELETIONNOCOST).cost
+                if WagnerFischer(line, asn[k][2], deletion=DELETIONNOCOST, substitution=SUBSTITUTION).cost < min_dist:
+                    min_dist = WagnerFischer(line, asn[k][2], deletion=DELETIONNOCOST, substitution=SUBSTITUTION).cost
                     min_indeces = []
                     min_indeces.append(k)
-                elif WagnerFischer(line, asn[k][3], deletion=DELETIONNOCOST).cost == min_dist:
+                elif WagnerFischer(line, asn[k][2], deletion=DELETIONNOCOST, substitution=SUBSTITUTION).cost == min_dist:
                     min_indeces.append(k)
 
         return min_indeces, min_dist
+
+    def saGlobal(self, solidassort_line):  # does not have modified subs costs
+        text = solidassort_line  # may be one, or more lines
+        asn = self.asn
+
+        min_dist = 10000
+        min_indices = []
+
+        for text_line in text:
+            line = text_line.replace(" ", "")
+            line = line.replace("\n", "")
+
+            for k in xrange(1, len(asn)):
+                if WagnerFischer(line, asn[k][2], deletion=DELETIONNOCOST).cost < min_dist:
+                    min_dist = WagnerFischer(line, asn[k][2], deletion=DELETIONNOCOST).cost
+                    min_indices = []
+                    min_indices.append(k)
+                elif WagnerFischer(line, asn[k][2], deletion=DELETIONNOCOST).cost == min_dist:
+                    min_indices.append(k)
+
+        return min_indices, min_dist
 
     def solidorassort(self, line):  # find out if the line is solid or assort code (or at least which is most likely. Assume img processing went well
         """Important notice: The assort code can also contain double 0, so need to also use length to check
@@ -2546,7 +2972,7 @@ class matcher():
         for k in range(0, len(text_lines)):
             result_list.append([False, False, False])
 
-        dist_threshold = 0.30
+        dist_threshold = 0.25
 
         # test the lines against ASN, not concerned about the values of the best matches yet, just want to confirm line types
         for index in range(0, len(
@@ -2555,22 +2981,25 @@ class matcher():
             cur_min_sa = 1000
             cur_min_td = 1000
             for element_no in range(1, len(asn)):
-
-                dist_ic = 1.0 * WagnerFischer(text_lines[index], asn[element_no][1],
-                                              deletion=DELETIONSMATCHER).cost / max(len(asn[element_no][1]), 1)
+                dist_ic = 1.0 * WagnerFischer(text_lines[index], asn[element_no][1], deletion=DELETIONNOCOST, substitution=SUBSTITUTION).cost
+                #dist_ic = 1.0 * WagnerFischer(text_lines[index], asn[element_no][1],
+                                              #deletion=DELETIONSMATCHER).cost / max(len(asn[element_no][1]), 1)
                 # dist_ic = 1.0*Levenshtein.distance(text_lines[index], asn[element_no][1])/max(len(asn[element_no][1]), 1)
                 if len(asn[element_no][1]) == 0 or len(text_lines[index]) == 0:
                     dist_ic = 999
 
                 checking_sa = text_lines[index]
-                dist_sa = 1.0 * WagnerFischer(checking_sa, asn[element_no][2], deletion=DELETIONNOCOST).cost / max(  # originally DELETIIONSMATCHER
-                    len(asn[element_no][2]), 1)
+                dist_sa = 1.0 * WagnerFischer(checking_sa, asn[element_no][2], deletion=DELETIONNOCOST, substitution=SUBSTITUTION).cost
+                #dist_sa = 1.0 * WagnerFischer(checking_sa, asn[element_no][2], deletion=DELETIONNOCOST).cost / max(  # originally DELETIIONSMATCHER
+                    #len(asn[element_no][2]), 1)
                 # dist_sa = 1.0*Levenshtein.distance(checking_sa, asn[element_no][2])/max(len(asn[element_no][2]), 1)
                 if len(asn[element_no][2]) == 0 or len(text_lines[index]) == 0:
                     dist_sa = 999
 
-                dist_td = 1.0 * WagnerFischer(text_lines[index], asn[element_no][0],
-                                              deletion=DELETIONSMATCHER).cost / max(len(asn[element_no][0]), 1)
+                # would not use the dist_td for this method (checkerNoText)?
+                dist_td = 1.0 * WagnerFischer(text_lines[index], asn[element_no][0], deletion=DELETIONNOCOST, substitution=SUBSTITUTION).cost
+                #dist_td = 1.0 * WagnerFischer(text_lines[index], asn[element_no][0],
+                                              #deletion=DELETIONSMATCHER).cost / max(len(asn[element_no][0]), 1)
                 # dist_td = 1.0*Levenshtein.distance(text_lines[index], asn[element_no][0])/max(len(asn[element_no][0]), 1)
                 if len(asn[element_no][0]) == 0 or len(text_lines[index]) == 0:
                     dist_td = 999
@@ -2674,15 +3103,21 @@ class matcher():
             print "Perfect on S/A!"
             skip_segmentation = True
             final_ind_dict['Solidcode'] = result_list_dict['Solidcode']
-
-        print final_ind_dict
-
-        itemcode_values, itemcode_indeces = self.itemcodeFinderNoText(text_lines, final_ind_dict)  # forward this later!
-
-        if skip_segmentation:
-            solidassort_indeces = self.solidassortFinderPerfect(text_lines, final_ind_dict)
+            itemcode_values, itemcode_indeces = self.itemcodeFinderNoText(text_lines,
+                                                                          final_ind_dict)  # forward this later!
+            solidassort_indeces = self.solidassortFinderPerfect(text_lines, final_ind_dict, min_dist_sa)
+        elif min_dist_sa < 0.25:
+            print "Satisfactory on S/A!"
+            skip_segmentation = False
+            final_ind_dict['Solidcode'] = result_list_dict['Solidcode']
+            itemcode_values, itemcode_indeces = self.itemcodeFinderNoText(text_lines,
+                                                                          final_ind_dict)  # forward this later!
+            solidassort_indeces = self.solidassortFinderPerfect(text_lines, final_ind_dict, min_dist_sa)
         else:
+            itemcode_values, itemcode_indeces = self.itemcodeFinderNoText(text_lines,
+                                                                          final_ind_dict)  # forward this later!
             solidassort_indeces = self.solidassortFinder(text_lines, final_ind_dict, itemcode_indeces)
+        print final_ind_dict
 
         unique_ic = True
         itemcode_check_uniques = itemcode_values
@@ -2837,7 +3272,7 @@ class matcher():
         itemcode_values, itemcode_indeces = self.itemcodeFinder(text_lines, final_ind_dict)  # forward this later!
 
         if skip_segmentation:
-            solidassort_indeces = self.solidassortFinderPerfect(text_lines, final_ind_dict)
+            solidassort_indeces = self.solidassortFinderPerfect(text_lines, final_ind_dict, min_dist_sa)  # need to feed the minimum distance
         else:
             solidassort_indeces = self.solidassortFinder(text_lines, final_ind_dict, itemcode_indeces)
 
