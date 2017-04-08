@@ -4,6 +4,12 @@ Six Sigma Green Belt project for X Company
 
 
 ## GUI.py:
+Download segmentation.py first before attempting to run gui.py. 
+Also, download sample images and Master ASN from Google Drive.
+Master ASN should be on the format [Text description, Itemcode, Sold/assort code, Image name, Print/hand], and should be stored as csv.
+
+> Update 04/08/2017: Added the PrintedBoxesFullSystem for accuracy testing purposes. 
+
 > Update 04/01/2017: Preparing Six Sigma stuff 
 
 > Update 03/20/2017: Partial implementation of reprocessing for single lines (S/A code).
