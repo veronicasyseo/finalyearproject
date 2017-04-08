@@ -968,7 +968,7 @@ class simpleapp_tk(Tkinter.Tk):
                 print "Got these wrong:"
                 print errors
 
-        elif self.method in "PrintedBoxesFullSystem":
+        elif self.method in "PrintedBoxesFullSystem":  # the most up-to-date method as of 04/08/2017
             if self.ASN_loaded:
                 directory = askdirectory()
                 # randomize all the files in the directory, and store the order for future reference.
@@ -979,7 +979,7 @@ class simpleapp_tk(Tkinter.Tk):
                         name_list.append(filename)
 
                 shuffle(name_list)
-                with open("name_list.pickled", "wb") as f:  # the pickle will get crowded over time if the new lists are written on top of the previous ones
+                with open("name_list.pickle", "wb") as f:  # the pickle will get crowded over time if the new lists are written on top of the previous ones
                     pickle.dump(name_list, f)
 
                 count_attempts = 0
@@ -991,6 +991,8 @@ class simpleapp_tk(Tkinter.Tk):
                 count_correct_not_unique = 0
                 errors_ic = []
                 errors_sa = []
+                correct_ic_vals = []
+                output_ic_vals = []
 
                 for filename in name_list:
                     if filename.endswith(".JPG"):  # conditions for initiating table removal
@@ -1214,11 +1216,19 @@ class simpleapp_tk(Tkinter.Tk):
                                 count_correct_not_unique += 1
                                 not_unique_but_correct.append(filename)
 
+                            if correct_index in itemcode_indeces:
+                                correct_ic_vals.append(str(self.match_instance.getICValue(correct_index)))  # from ASN, using correct index
+                                output_ic_vals.append(str(text[categories['Itemcode']]))  # check the most up-to-date IC est
+                                print "Correct IC: " + str(self.match_instance.getICValue(correct_index))
+                                print "Read IC: " + str(text[categories['Itemcode']])
+
                             print str(filename)
 
                             self.match_instance.removeDoneBox(correct_index)
 
                             print "So far, have done " + str(count_attempts) + " boxes, and the accuracy thus far is: " + str((1.0 * count_correct_box / count_attempts))
+                            print "Correct IC: " + str(count_correct_ic) + " "
+                            print "Correct SA: " + str(count_correct_sa) + " "
 
                             print "Ended, awaiting next input"
                         else:
@@ -1237,6 +1247,13 @@ class simpleapp_tk(Tkinter.Tk):
                 print "Not unique but correct: "
                 print not_unique_but_correct
                 print "Number of boxes tested: " + str(count_attempts)
+
+                # save the correct and output IC values to a pickle
+                with open("outputIC.pickle", "w") as f:
+                    pickle.dump(output_ic_vals, f)  # dump the entire object to the file for future reference
+
+                with open("correctIC.pickle", "w") as f:
+                    pickle.dump(correct_ic_vals, f)
 
 
         elif self.method in "cv2AdaptiveMean":  # needs to be fixed
@@ -2456,6 +2473,9 @@ class matcher():
 
         return ret_val
 
+    def getICValue(self, index):
+        return self.asn[index][1]
+
     def removeDoneBox(self, index):
         self.asn.pop(int(index))  # should not be necessary to convert to int
         # check if this pops the entire asn away?
@@ -2670,8 +2690,8 @@ class matcher():
         asn = self.asn
         text_lines = text_lines
         categories = categories
-        dist = dist
-        dist = 1000
+        distance = dist
+        distance = 1000
         # only works if the method for calculating distances is the same, and if the index for sa is correct.
         solidassort = text_lines[categories['Solidcode']].replace(" ", "")
         solidassort = solidassort.replace("\n", "")
@@ -2681,11 +2701,11 @@ class matcher():
         # pass 2: find the value corresponding to the minimum cost
 
         for k in range(1, len(asn)):
-            if WagnerFischer(solidassort, asn[k][2], deletion=DELETIONNOCOST, substitution=SUBSTITUTION).cost < dist:
+            if WagnerFischer(solidassort, asn[k][2], deletion=DELETIONNOCOST, substitution=SUBSTITUTION).cost < distance:
                 solidassort_indeces = []
                 solidassort_indeces.append(k)
-                dist = WagnerFischer(solidassort, asn[k][2], deletion=DELETIONNOCOST, substitution=SUBSTITUTION).cost
-            elif WagnerFischer(solidassort, asn[k][2], deletion=DELETIONNOCOST, substitution=SUBSTITUTION).cost == dist:
+                distance = WagnerFischer(solidassort, asn[k][2], deletion=DELETIONNOCOST, substitution=SUBSTITUTION).cost
+            elif WagnerFischer(solidassort, asn[k][2], deletion=DELETIONNOCOST, substitution=SUBSTITUTION).cost == distance:
                 solidassort_indeces.append(k)
 
         for k in solidassort_indeces:
@@ -3028,7 +3048,6 @@ class matcher():
         index_td = False
         # find the best scorers (based on ASN) for each category
         for x in range(0, len(result_list)):  # if tied, go by index heuristics
-
             if result_list[x][0] < min_dist_ic:
                 min_dist_ic = result_list[x][0]
                 index_ic = x
@@ -3038,7 +3057,7 @@ class matcher():
             if result_list[x][2] < min_dist_td:
                 min_dist_td = result_list[x][2]
                 index_td = x
-
+        # what does the above do? Each of the first indices in result_list corresponds to a line number. The second index corresponds to ic, sa, td
         if index_ic == index_td:
             index_td = False
 
