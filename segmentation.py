@@ -92,7 +92,10 @@ def resize_with_constant_ratio(img, char_dim):
         new_w = int(roi_w * scale)
         new_h = int(char_dim-pad_dim)
 
-    dst = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+    try:
+        dst = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+    except:
+        dst = np.zeros((new_w, new_h), dtype='uint8')
 
     return dst
 
