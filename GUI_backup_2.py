@@ -22,6 +22,7 @@ import pickle
 import Segmentation  # requires you to download Segmentation.py from our github repository
 from random import shuffle
 import math
+import distance
 
 class simpleapp_tk(Tkinter.Tk):
     def __init__(self, parent):  # constructor
@@ -978,7 +979,7 @@ class simpleapp_tk(Tkinter.Tk):
                     if filename.endswith(".JPG"):
                         name_list.append(filename)
 
-                shuffle(name_list)
+                # shuffle(name_list)  # instead of shuffling, use fixed order now!
                 with open("name_list.pickle", "wb") as f:  # the pickle will get crowded over time if the new lists are written on top of the previous ones
                     pickle.dump(name_list, f)
 
@@ -1191,9 +1192,12 @@ class simpleapp_tk(Tkinter.Tk):
                             # now, want to return the guesses of item code, solid/assort code and the entire box
 
                             # find the TD guesses.Want to move this later, just keep here for easy refer for now.
-
-                            text_guess = text[categories['Text description']]
-                            text_indices = self.match_instance.findTDIndices(text)
+                            # problematic part: currently given 0 accuracy for this part
+                            text_guess = str(text[categories['Text description']])
+                            print "Text guess: " + str(text_guess)
+                            feed = []
+                            feed.append(text_guess)
+                            text_indices = self.match_instance.findTDIndices(feed)  # used to be 'text'. Does not appear to return the correct indices?
 
                             print str(filename)
                             print "Starting next input"
@@ -1244,6 +1248,7 @@ class simpleapp_tk(Tkinter.Tk):
                             if correct_index in sa_verdict:
                                 correct_sa_vals.append(str(self.match_instance.getSAValue(correct_index)))
                                 output_sa_vals.append(str(text[categories['Solidcode']]))
+                                print "Found correct SA, SA reading was: " + str(text[categories['Solidcode']])
 
                             if correct_index in text_indices:
                                 correct_td_vals.append(str(self.match_instance.getTDValue(correct_index)))
@@ -2301,20 +2306,25 @@ def INSERTION(A, cost=1):  # changed: set costs for inserting hyphen to 0
 
 
 def DELETION(A, cost=1):
-  return cost
+    if A in ".":
+        return 0
+    else:
+        return cost
 
 def DELETIONNOCOST(A, cost=0):
     return cost
 
 def SUBSTITUTION(A, B, cost=0.10):  # want custom weights. Confusion matrix please!, # changed from 0.15 to 0.10. Now 2 random and 1 good sub can be carried out
   if (A in "O" or "o") and (B in "0"):
-          return 0.04
+          return 0.01  # changed from 0.04 at noon 04/10/2017
   elif (A in "I" or "i" or "L" or "l") and (B in "1" or "7"):
-      return 0.05
+      return 0.03  # changed from 0.05
   elif (A in "B" or "b") and (B in "8"):
       return 0.055
   elif (A in ".") and (B in "-"):
-      return 0.08
+      return 0.05  # changed from 0.08
+  elif (A in 's' or 'S') and (B in '5'):
+      return 0.03  # added
   else:
     return cost
 
@@ -2532,22 +2542,33 @@ class matcher():
     def getSAValue(self, index):
         return self.asn[index][2]
 
-    def findTDIndices(self, text):
+    def findTDIndices(self, text_lines):
+        """Change the method to assume only one line of text is used as input"""
         asn = self.asn
-        text = text
+        text = text_lines[0]
         min_dist = 1000
         td_indices = []
 
-        for line in text:
-            line = line.replace("\n", "")
+        line = text.replace("\n", "")
 
-            for x in xrange(1, len(asn)):
-                if WagnerFischer(line, str(asn[x][0]), deletion = DELETIONNOCOST, substitution=SUBSTITUTION).cost < min_dist:
-                    td_indices = []
-                    td_indices.append(x)
-                    min_dist = WagnerFischer(line, str(asn[x][0]), deletion = DELETIONNOCOST, substitution=SUBSTITUTION).cost
-                elif WagnerFischer(line, str(asn[x][0]), deletion = DELETIONNOCOST, substitution=SUBSTITUTION).cost == min_dist:
-                    td_indices.append(x)
+        for x in xrange(1, len(asn)):
+            if distance.nlevenshtein(line, str(asn[x][0]), method=1) < min_dist:
+                td_indices = []
+                td_indices.append(x)
+                min_dist = distance.nlevenshtein(line, str(asn[x][0]), method=1)
+            elif distance.nlevenshtein(line, str(asn[x][0]), method=1) == min_dist:
+                td_indices.append(x)
+
+        """for x in xrange(1, len(asn)):  # change to use other deletion than DELETIONNOCOST
+            if WagnerFischer(line, str(asn[x][0]), deletion = DELETION, substitution=SUBSTITUTION).cost < min_dist:
+                td_indices = []
+                td_indices.append(x)
+                min_dist = WagnerFischer(line, str(asn[x][0]), deletion = DELETION, substitution=SUBSTITUTION).cost
+            elif WagnerFischer(line, str(asn[x][0]), deletion = DELETION, substitution=SUBSTITUTION).cost == min_dist:
+                td_indices.append(x)"""
+
+        for k in xrange(0, len(td_indices)):
+            print asn[k][0]
 
         return td_indices
 
@@ -2787,7 +2808,7 @@ class matcher():
         for k in solidassort_indeces:
             print asn[k][2]
 
-        return solidassort_indeces
+        return solidassort_indeces, distance
 
     def solidassortFinder(self, text_lines, categories, itemcode_indeces):
         asn = self.asn
@@ -3195,8 +3216,8 @@ class matcher():
         if min_dist_td < dist_threshold:
             final_ind_dict['Text description'] = result_list_dict['Text description']
 
-        if type(ind_dictionary['Text description']) is bool:
-            final_ind_dict['Text description'] = False
+        # if type(ind_dictionary['Text description']) is bool:  # why this????
+            # final_ind_dict['Text description'] = False
 
         if min_dist_sa == 0.0: # may want to be more flexible here, or change the way min_dist_sa is computed
             print "Perfect on S/A!"
@@ -3204,8 +3225,8 @@ class matcher():
             final_ind_dict['Solidcode'] = result_list_dict['Solidcode']
             itemcode_values, itemcode_indeces = self.itemcodeFinderNoText(text_lines,
                                                                           final_ind_dict)  # forward this later!
-            # solidassort_indeces = self.solidassortFinderPerfect(text_lines, final_ind_dict, min_dist_sa)
-            solidassort_indeces, min_dist_sa_rp = self.saGlobal(text_lines)   ###
+            solidassort_indeces, min_dist_sa_rp = self.solidassortFinderPerfect(text_lines, final_ind_dict, min_dist_sa)
+            # solidassort_indeces, min_dist_sa_rp = self.saGlobal(text_lines)   ###
             if min_dist_sa_rp > min_dist_sa:
                 print "Error in checkerNoText(): saGlobal failed to find appropriate sa"
         elif min_dist_sa < 0.25:  # usually, this will evaluate to True
@@ -3214,27 +3235,26 @@ class matcher():
             final_ind_dict['Solidcode'] = result_list_dict['Solidcode']
             itemcode_values, itemcode_indeces = self.itemcodeFinderNoText(text_lines,
                                                                           final_ind_dict)  # forward this later!
-            #solidassort_indeces = self.solidassortFinderPerfect(text_lines, final_ind_dict, min_dist_sa)
-            solidassort_indeces, min_dist_sa_rp = self.saGlobal(text_lines)
+            solidassort_indeces, min_dist_sa_rp = self.solidassortFinderPerfect(text_lines, final_ind_dict, min_dist_sa)
+            # solidassort_indeces, min_dist_sa_rp = self.saGlobal(text_lines)
             if min_dist_sa_rp > min_dist_sa:
                 print "Error in checkerNoText(): saGlobal failed to find appropriate sa"
         else:
             itemcode_values, itemcode_indeces = self.itemcodeFinderNoText(text_lines,
                                                                           final_ind_dict)  # forward this later!
-            # solidassort_indeces = self.solidassortFinder(text_lines, final_ind_dict, itemcode_indeces)
-            solidassort_indeces, min_dist_sa_rp = self.saGlobal(text_lines)
+            solidassort_indeces = self.solidassortFinder(text_lines, final_ind_dict, itemcode_indeces)
+            # solidassort_indeces, min_dist_sa_rp = self.saGlobal(text_lines)
             skip_segmentation = False
         print final_ind_dict
 
         unique_ic = True
         itemcode_check_uniques = itemcode_values
-        # check if the item code values are unique.
+        # check if the item code values are unique. Not really a pressing issue
         while len(itemcode_check_uniques) > 1:
             element = itemcode_check_uniques.pop()
             if element not in itemcode_check_uniques:
                 print "Not unique item code! "
                 unique_ic = False
-        # print "Remember to forward this output to the next step ! "
 
         return final_ind_dict, text_lines, itemcode_indeces, unique_ic, skip_segmentation, solidassort_indeces, min_dist_ic, min_dist_sa
 
