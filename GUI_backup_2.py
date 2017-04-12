@@ -1099,7 +1099,10 @@ class simpleapp_tk(Tkinter.Tk):
                                 # check: any lines w/ small vertical height near the IC?
 
                                 if type(categories['Itemcode']) is not bool:
-                                    ic_height = boxes[categories['Itemcode']][3] - boxes[categories['Itemcode']][1]
+                                    try:
+                                        ic_height = boxes[categories['Itemcode']][3] - boxes[categories['Itemcode']][1]
+                                    except IndexError:
+                                        ic_height = 20
                                     height_threshold = int(0.30 * ic_height)
                                 else:
                                     height_threshold = 20
@@ -1193,7 +1196,10 @@ class simpleapp_tk(Tkinter.Tk):
 
                             # find the TD guesses.Want to move this later, just keep here for easy refer for now.
                             # problematic part: currently given 0 accuracy for this part
-                            text_guess = str(text[categories['Text description']])
+                            try:
+                                text_guess = str(text[categories['Text description']])
+                            except IndexError:
+                                text_guess = ""
                             print "Text guess: " + str(text_guess)
                             feed = []
                             feed.append(text_guess)
@@ -1943,6 +1949,18 @@ class img_processor():
 
         text_output, boxes = self.Basic(img_for_tess, combined)
 
+        # modify text output (from 12 April)
+        """no_blank = []
+
+        for line in text_output:
+            line = line.replace("\n", "")
+            line_p = line.replace(" ", "")
+
+            if len(line_p) > 0:
+                no_blank.append(line)
+
+        text_output = no_blank"""  # fails because the format from Tess is not a list, but rather a long string with "\n" to separate lines 
+
         return text_output, boxes, (255-combined)
 
     def Advanced(self):
@@ -2568,12 +2586,15 @@ class matcher():
                 td_indices.append(x)"""
 
         for k in xrange(0, len(td_indices)):
-            print asn[k][0]
+            print asn[td_indices[k]][0]
 
         return td_indices
 
     def removeDoneBox(self, index):
-        self.asn.pop(int(index))  # should not be necessary to convert to int
+        try :
+            self.asn.pop(int(index))  # should not be necessary to convert to int
+        except TypeError:
+            pass
         # check if this pops the entire asn away?
 
     def uniqueSA(self, itemcode_indices, sa_indices):
@@ -2794,16 +2815,21 @@ class matcher():
         solidassort = solidassort.upper()
         solidassort_indeces = []
 
+        for line in text_lines:
+            line = line.replace(" ", "")
+            line = line.replace("\n", "")
+            solidassort = line
+
         # iteration 1: find the minimal cost
         # pass 2: find the value corresponding to the minimum cost
 
-        for k in range(1, len(asn)):
-            if WagnerFischer(solidassort, asn[k][2], deletion=DELETIONNOCOST, substitution=SUBSTITUTION).cost < distance:
-                solidassort_indeces = []
-                solidassort_indeces.append(k)
-                distance = WagnerFischer(solidassort, asn[k][2], deletion=DELETIONNOCOST, substitution=SUBSTITUTION).cost
-            elif WagnerFischer(solidassort, asn[k][2], deletion=DELETIONNOCOST, substitution=SUBSTITUTION).cost == distance:
-                solidassort_indeces.append(k)
+            for k in range(1, len(asn)):
+                if WagnerFischer(solidassort, asn[k][2], deletion=DELETIONNOCOST, substitution=SUBSTITUTION).cost < distance:
+                    solidassort_indeces = []
+                    solidassort_indeces.append(k)
+                    distance = WagnerFischer(solidassort, asn[k][2], deletion=DELETIONNOCOST, substitution=SUBSTITUTION).cost
+                elif WagnerFischer(solidassort, asn[k][2], deletion=DELETIONNOCOST, substitution=SUBSTITUTION).cost == distance:
+                    solidassort_indeces.append(k)
 
         for k in solidassort_indeces:
             print asn[k][2]
