@@ -79,12 +79,16 @@ def resize_with_constant_ratio(img, char_dim):
 	-------
     dst : resized digit
 	"""
-    roi_h = img.shape[0]
+    roi_h = img.shape[0]  # need to handle cases where the height and width are both 0. The interpretation is that there is nothing here
     roi_w = img.shape[1]
 
     max_dim = max(roi_w, roi_h)
     pad_dim = 2
-    scale = float(char_dim-pad_dim) / max_dim
+    try:  # custom modification
+        scale = float(char_dim-pad_dim) / max_dim
+    except ZeroDivisionError:
+        scale = 1.0
+
     if roi_w >= roi_h:
         new_w = int(char_dim-pad_dim)
         new_h = int(roi_h * scale)
@@ -151,10 +155,40 @@ class PatternComponent():
         self.beta = -1
         self.y_min = 100000
         self.y_max = 0
+        self.x_min = 100000
+        self.x_max = 0
 
         self.setBeta(width)  # always do when initialize then pattern component
         self.setYMin()
         self.setYMax()
+        self.setXMin()
+        self.setXMax()
+
+    def setXMin(self):
+        outer = self.getOuter()
+        x_min = 10000
+
+        for point in outer:
+            if point[0] < x_min:
+                x_min = point[0]
+
+        self.x_min = x_min
+
+    def setXMax(self):
+        outer = self.getOuter()
+        x_max = 0
+
+        for point in outer:
+            if point[0] > x_max:
+                x_max = point[0]
+
+        self.x_max = x_max
+
+    def getXMin(self):
+        return self.x_min
+
+    def getXMax(self):
+        return self.x_max
 
     def setYMin(self):
         outer = self.getOuter()
@@ -382,7 +416,6 @@ class PatternComponent():
 
     def getWidth(self):
         # print str(self.outer[2]-self.outer[0])
-
         return int(self.outer[2] - self.outer[0])
 
     def getXmin(self):
@@ -514,6 +547,8 @@ class PatternComponent():
 
 
 def Fujisawa(filename_slice):
+    """Takes a binary input image (should be saved as image), performs segmentation and recognition.
+     Returns text outputs for the best guesses of the value of the entire line. """
     img = cv2.imread(filename_slice, 0)
     binary = 255 - img
     black_bg = np.zeros(binary.shape, dtype='uint8')
@@ -527,7 +562,7 @@ def Fujisawa(filename_slice):
             large_cnt.append(c)  # or consider a threshold that varies with the height of the entire extracted image
 
     large_cnt_backup = large_cnt
-    cv2.drawContours(black_bg, large_cnt, -1, color=255, thickness=1)
+    cv2.drawContours(black_bg, large_cnt, -1, color=255, thickness=1)  # for illustration only?
     # Image.fromarray(black_bg).show()
 
     # next sort the contours such that points are from left to right
@@ -636,7 +671,7 @@ def Fujisawa(filename_slice):
             height_cur = y_max_cur - y_min_cur
             height_prev = y_max_prev - y_min_prev
 
-            if (y_max_prev < y_min_cur) or (y_max_cur < y_min_prev) or (y_min_prev > y_max_cur):
+            if (y_max_prev < y_min_cur) or (y_max_cur < y_min_prev):
                 if height_cur > height_prev:
                     poptarts.append(pattern_components[x-1])
                 else:
@@ -694,7 +729,6 @@ def Fujisawa(filename_slice):
 
     # Find the indices of the leftmost and rightmost points. Need not be accurate, just do the first point that matches x_min or x_max
     for pc in pattern_components:
-        # print pc.getOuter()  # gets first element only, while what we actually want is to get all the x-values.
         outer = pc.getOuter()
         index_x_min = [row[0] for row in outer].index(pc.getXmin())
         index_x_max = [row[0] for row in outer].index(pc.getXmax())
@@ -823,14 +857,14 @@ def Fujisawa(filename_slice):
                 inner_pts.append([x, y])
 
             inner = inner_pts
-            #print "Inner: "
-            #print inner
 
+            # get the complete collect of points in the contour
             if len(inner) > 0:
                 all_pts = outer + inner  # at this point, inner should be just a list of points, but it does not appear to hold for the 00 contour.
             else:
                 all_pts = outer
-            x_min, x_max, y_min, y_max = pc.findBoundingBox(all_pts)
+
+            x_min, x_max, y_min, y_max = pc.findBoundingBox(all_pts)  # get the boundign rectangle of the contour, using both inner and outer contours
             new_size = max((x_max - x_min), (y_max - y_min))
             # may be able to recycle some code here
 
@@ -861,8 +895,10 @@ def Fujisawa(filename_slice):
             # prepare pad_c for KNN
             arr_c = np.asarray(pad_c)
             ready_c = arr_c.reshape(-1, 784).astype('float32')
-            ret, result_c, neighbours, dist = knn_model.findNearest(ready_c, k=3)  # k may need to be changed
+            # perform KNN on the ressized full contour first, before any form of cuts
+            ret, result_c, neighbours, dist = knn_model.findNearest(ready_c, k=3)  # k may need to be changed. may want to keep the value of dist
             #print "Result without cuts: "
+            # next, want to do cuts
             #print result_c
             #print dist
             pc.setSymbolGuesses(str(int(result_c)))
@@ -893,12 +929,12 @@ def Fujisawa(filename_slice):
                 try:
                     y_l = lower[[row[0] for row in lower].index(x)][1]
                 except ValueError:
-                    y_l = 0
+                    y_l = 0  # doesn't matter if value is 0, as it's just going to be used for computing H(x) anyways
                 # index_u = [row[0] for row in upper].index(x)
                 # index_l = [row[0] for row in lower].index(x)
 
                 h = abs(y_u - y_l)
-                h_x.append((x, h))
+                h_x.append((x, h))  # keep x-values also, since it doesn't start from x=0, and since it may not exist for all x-values
             # print h_x  # currently works as intended
             x_for_graph = [row[0] for row in h_x]
             y_for_graph = [row[1] for row in h_x]
@@ -923,7 +959,10 @@ def Fujisawa(filename_slice):
 
             cross_points_upper = []
             cross_points_lower = []
-            for x in xrange(lower_bound, upper_bound):  # except that H(x) is defined for all values of x
+            for x in xrange(lower_bound, upper_bound):  # except that H(x) is not defined for all values of x. Need to handle cases where H(x) is undefined
+                # check if H(x) is defined for this value of x first (and for x-1)
+                # if yes, then find the difference between the current and previous H-values, and check if there is a cross
+                # want to also include the midpoint as cutting point, not just the steepest ascending pts near crossing points
                 if (h_x[[row[0] for row in h_x].index(x)][1] >= h_t) and (h_x[[row[0] for row in h_x].index(x)-1][1] < h_t): # a golden cross
                     try:
                         cross_points_lower.append(lower[[row[0] for row in lower].index(x)])
@@ -944,7 +983,7 @@ def Fujisawa(filename_slice):
                         cross_points_upper.append(upper[[row[0] for row in upper].index(x)])
                     except ValueError:
                         cross_points_upper.append(lower[[row[0] for row in lower].index(x)])
-
+            # after collecting the crossing points, want to obtain the adjusted cutting points.
             # print cross_points_lower  # keeps track of all the x-values
             # print cross_points_upper
 
@@ -959,9 +998,13 @@ def Fujisawa(filename_slice):
                 black_rectangle[point[1], point[0], :] = 67
 
             # Image.fromarray(black_rectangle).show()
+            # cutting points, on the format (x, y).
             cutting_points_lower = []
             cutting_points_upper = []
 
+            cutting_points_lower.append(lower[[row[0] for row in lower].index(x_bar)])
+
+            cutting_points_upper.append(upper[[row[0] for row in upper].index(x_bar)])
             # want to shift the cutting points to a value x such that the vertical width expands abruptly
             # for now, use H(x), as it seems reliable enough (would only case troubles where the upper contour point is below the lower contour point)
             # how large region to search??
@@ -1019,8 +1062,8 @@ def Fujisawa(filename_slice):
 
                     if delta_x > interval_length:
                         searching = False
-
-                try:
+                # try do not use excessive error handling
+                """try:
                     cutting_points_lower.append(lower[[row[0] for row in lower].index(x_cur_highest_delta)])
                 except ValueError:
                     try:
@@ -1033,20 +1076,25 @@ def Fujisawa(filename_slice):
                     try:
                         cutting_points_upper.append(lower[[row[0] for row in lower].index(x_cur_highest_delta)])
                     except ValueError:
-                        pass
+                        pass"""
+                # should they be x-coords or collection of points?
+                cutting_points_lower.append(lower[[row[0] for row in lower].index(x_cur_highest_delta)])
+                cutting_points_upper.append(upper[[row[0] for row in upper].index(x_cur_highest_delta)])
 
-            for point in cutting_points_lower:
+            print cutting_points_lower
+            print cutting_points_upper
+            """for point in cutting_points_lower:
                 black_rectangle[point[1], point[0], 2] = 255
 
             for point in cutting_points_upper:
-                black_rectangle[point[1], point[0], 2] = 255
+                black_rectangle[point[1], point[0], 2] = 255"""
 
             pc.setCuttingPoints(cutting_points_lower, cutting_points_upper)
-            black_rectangle = pc.drawCuts(black_rectangle)
+            # black_rectangle = pc.drawCuts(black_rectangle)
 
             # Image.fromarray(black_rectangle).show()
 
-            if len(pc.getCuttingPoints()) == 0 and len(pc.getCuttingPoints()) == 0:
+            if (len(pc.getCuttingPoints()) == 0) and (len(pc.getCuttingPoints()) == 0):
                 # check if there is moe than one inner loop.
                 inner_cnts = pc.getInner()
                 if len(inner_cnts) > 1: # have mroe than one inner loop
@@ -1217,11 +1265,14 @@ def Fujisawa(filename_slice):
                 pc.setSymbolDistances([(min(dist_l) + min(dist_r))/2])
 
         elif pc.getCategory() == 0:  # check if it's a hyphen
+            # if hyphen most likely, then keep that output.
+            # otherwise, send for KNN classification
             x_min, x_max, y_min, y_max = pc.findBoundingBox(pc.getOuter())
             if (cv2.contourArea(pc.getOuter()) > (0.70 * ((x_max-x_min)*(y_max-y_min)))) and (x_max-x_min > y_max-y_min):  # then go ahead and assume it's a hyphen
+                # considered a hyphen if the contour fills at least 70% of the bounding rectangle
                 pc.setSymbolGuesses("-")  # add hyphen as guess
                 pc.setSymbolDistances([0, 1])  # will therefore always be selected
-            else:  # treat as if no cuts are necessary (no cut hypothesis). Rarely triggered
+            else:  # treat as if no cuts are necessary (no cut hypothesis).
                 outer = pc.getOuter()
                 inner = pc.getInnerContours()  # may have multiple inner loops - in this case want to combine all of them
                 # handle the different formats of outer, inner
@@ -1324,7 +1375,11 @@ def Fujisawa(filename_slice):
         #print pc.getRankedSymbolGuesses()  # seems to have no effect?
     # now, generate all the text outputs
     text_outputs = []
+    x_min_vals = []
+    x_max_vals = []
     for pc in pattern_components:
+        x_min_vals.append(pc.getXMin())
+        x_max_vals.append(pc.getXMax())
         guesses = pc.getRankedSymbolGuesses()
         text_outputs_updated = []
         for guess in guesses:
@@ -1332,10 +1387,59 @@ def Fujisawa(filename_slice):
                 for text in text_outputs:
                     text += guess
                     text_outputs_updated.append(text)
+        if len(guesses):
+            text_outputs.append(guesses[0])
 
-        text_outputs = text_outputs_updated
+        # text_outputs = text_outputs_updated
+    print text_outputs # does not print anything yet
 
+    # next, adjust text_outputs to provide the output
+    print "X min vals: "
+    print x_min_vals
+    print "X max vals:"
+    print x_max_vals
+    text_kept = ""
+    # starting with the middle value, go both in left and right directions, always choose the pc with smaller distance, and add it to the list
+    # need to update the left and right ones, to keep track for the purpose of recalculating distances
+    # each iteration will add only one more
+    k = 0
+    j = 0
+
+    k_start = int(1.0 * len(text_outputs) / 2.0)  # the starting value
+
+    text_kept += str(text_outputs[k_start])
+    x_min_cur = x_min_vals[k_start]
+    x_max_cur = x_max_vals[k_start]
+    terminate = False
+    k_cur = k_start
+    j_cur = k_start
+
+    while len(text_kept)<10 and not terminate:  # want to avoid popping from the list of strings to keep things simple
+        if (k_cur > 0) and (j_cur < len(text_outputs)-1):
+            if (x_min_cur - x_max_vals[k_cur-1]) < (x_min_vals[j_cur+1] - x_max_cur):  # i.e. if the left hand side pc is closer.  This will lead to index errpr when reach the end
+                k_cur -= 1
+                x_min_cur = x_max_vals[k_cur]
+                text_kept = str(text_outputs[k_cur]) + text_kept
+            else:
+                j_cur += 1
+                x_max_cur = x_min_vals[j_cur]
+                text_kept = text_kept + str(text_outputs[j_cur])
+        elif (k_cur == 0) and (j_cur < len(text_outputs)-1):
+            j_cur += 1
+            text_kept = text_kept + str(text_outputs[j_cur])
+        elif (k_cur > 0) and (j_cur == len(text_outputs)):
+            k_cur -= 1
+            text_kept = str(text_outputs[k_cur]) + text_kept
+        elif (k_cur == 0) and (len(text_kept) < 10):
+            text_kept = str(text_outputs[0]) + text_kept
+        else:
+            terminate = True
+            break
+        # last issue: the last element on LHS is not added currently (so the string may be of length 9 even if have > 10 letters in total)
+    print text_kept
     # print "Full list of all the possible text outputs based on the segmentation and knn classification: "
     # print text_outputs
+    # t = []
+    # text_kept = t.append(text_kept)
 
-    return text_cands
+    return text_kept
